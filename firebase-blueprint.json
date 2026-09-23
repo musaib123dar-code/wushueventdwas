@@ -1,0 +1,151 @@
+{
+  "entities": {
+    "events": {
+      "title": "Event",
+      "description": "Championship tournament event configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "organizer": { "type": "string" },
+        "venue": { "type": "string" },
+        "city": { "type": "string" },
+        "state": { "type": "string" },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" },
+        "tournamentReferenceDate": { "type": "string" },
+        "isLive": { "type": "boolean" },
+        "rings": { "type": "array", "items": { "type": "string" } },
+        "roundDurationSec": { "type": "number" },
+        "roundsCount": { "type": "number" },
+        "restDurationSec": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "isLive"]
+    },
+    "players": {
+      "title": "Player",
+      "description": "Registered Wushu Sanda athletes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "registrationNumber": { "type": "string" },
+        "name": { "type": "string" },
+        "gender": { "type": "string", "enum": ["male", "female"] },
+        "dateOfBirth": { "type": "string" },
+        "clubSchool": { "type": "string" },
+        "district": { "type": "string" },
+        "state": { "type": "string" },
+        "exactWeightKg": { "type": "number" },
+        "assignedCategoryId": { "type": "string" },
+        "weighInVerified": { "type": "boolean" },
+        "status": { "type": "string" },
+        "eventId": { "type": "string" },
+        "seedNumber": { "type": "number" }
+      },
+      "required": ["id", "name", "gender", "dateOfBirth", "clubSchool", "exactWeightKg"]
+    },
+    "ageCategories": {
+      "title": "AgeCategory",
+      "description": "Age bracket configurations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "minAge": { "type": "number" },
+        "maxAge": { "type": "number" },
+        "description": { "type": "string" }
+      },
+      "required": ["id", "name", "minAge", "maxAge"]
+    },
+    "weightCategories": {
+      "title": "WeightCategory",
+      "description": "Weight division configurations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "gender": { "type": "string", "enum": ["male", "female"] },
+        "minWeightKg": { "type": "number" },
+        "maxWeightKg": { "type": "number" }
+      },
+      "required": ["id", "name", "gender", "minWeightKg", "maxWeightKg"]
+    },
+    "categories": {
+      "title": "Category",
+      "description": "Active tournament category groups",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "ageCategory": { "type": "string" },
+        "minAge": { "type": "number" },
+        "maxAge": { "type": "number" },
+        "gender": { "type": "string" },
+        "weightCategory": { "type": "string" },
+        "maxWeightKg": { "type": "number" },
+        "isLocked": { "type": "boolean" },
+        "playerCount": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "name", "gender", "isLocked"]
+    },
+    "brackets": {
+      "title": "Bracket",
+      "description": "Tournament bout knockout brackets",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "categoryId": { "type": "string" },
+        "categoryName": { "type": "string" },
+        "totalParticipants": { "type": "number" },
+        "rounds": { "type": "array" },
+        "status": { "type": "string" },
+        "podium": { "type": "object" }
+      },
+      "required": ["id", "categoryId", "rounds"]
+    },
+    "users": {
+      "title": "User",
+      "description": "Staff, officials and administrators accounts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "role": { "type": "string", "enum": ["super_admin", "admin", "official", "general_view"] },
+        "assignedRing": { "type": "string" },
+        "ringAssignment": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "role"]
+    },
+    "auditLogs": {
+      "title": "AuditLog",
+      "description": "Security and action audit logs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userRole": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "action"]
+    },
+    "systemState": {
+      "title": "SystemState",
+      "description": "Global tournament state snapshot and sync metadata",
+      "type": "object",
+      "properties": {
+        "activeEventId": { "type": "string" },
+        "lastUpdated": { "type": "string" }
+      }
+    }
+  }
+}

@@ -34,6 +34,7 @@ import {
   Check,
   ExternalLink,
   Trophy,
+  Zap,
 } from 'lucide-react';
 
 export const MasterAdminPanel: React.FC = () => {
@@ -64,6 +65,8 @@ export const MasterAdminPanel: React.FC = () => {
     exportMasterExcelBackup,
     importMasterWorkbook,
     setActiveTab,
+    supabaseStatus,
+    setSupabaseModalOpen,
   } = useTournament();
 
   const [activeSubTab, setActiveSubTab] = useState<'event' | 'weights' | 'ages' | 'excel' | 'lifecycle'>('event');
@@ -533,14 +536,29 @@ export const MasterAdminPanel: React.FC = () => {
           <span>5. Lifecycle & Data Management</span>
         </button>
 
-        <button
-          onClick={() => setActiveTab('users')}
-          className="ml-auto flex items-center gap-1.5 px-3.5 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-semibold cursor-pointer transition-all"
-          title="Open Official Registration Portal"
-        >
-          <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-          <span>Register Officials & Admins</span>
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={() => setSupabaseModalOpen(true)}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold cursor-pointer transition-all border ${
+              supabaseStatus === 'connected'
+                ? 'bg-emerald-950/50 hover:bg-emerald-900/50 text-emerald-300 border-emerald-500/40 shadow-xs'
+                : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+            }`}
+            title="Configure Supabase Cloud Backend, live sync & SQL Schema"
+          >
+            <Zap className={`w-3.5 h-3.5 ${supabaseStatus === 'connected' ? 'text-emerald-400' : 'text-slate-400'}`} />
+            <span>Supabase DB ({supabaseStatus === 'connected' ? 'Connected' : 'Configure'})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('users')}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-semibold cursor-pointer transition-all"
+            title="Open Official Registration Portal"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+            <span>Register Officials & Admins</span>
+          </button>
+        </div>
       </div>
 
       {/* ========================================================================= */}

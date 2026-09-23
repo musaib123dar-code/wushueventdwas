@@ -15,10 +15,24 @@ import {
   Crown,
   Radio,
   Lock,
+  Zap,
+  Database,
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
-  const { role, isLoggedIn, setLoginModalOpen, activeTab, setActiveTab, brackets, categories, players, event } = useTournament();
+  const {
+    role,
+    isLoggedIn,
+    setLoginModalOpen,
+    activeTab,
+    setActiveTab,
+    brackets,
+    categories,
+    players,
+    event,
+    supabaseStatus,
+    setSupabaseModalOpen,
+  } = useTournament();
 
   const liveBoutCount = brackets.reduce((acc, b) => {
     return acc + b.rounds.reduce((rAcc, r) => rAcc + r.bouts.filter(bout => bout.status === 'live').length, 0);
@@ -138,6 +152,30 @@ export const Sidebar: React.FC = () => {
             {event.isLive ? '● LIVE' : '○ NOT ACTIVE'}
           </span>
         </div>
+
+        {/* Supabase Cloud Backend Status Card */}
+        <button
+          onClick={() => setSupabaseModalOpen(true)}
+          className={`w-full p-2.5 rounded-xl border text-xs flex items-center justify-between transition-all cursor-pointer text-left ${
+            supabaseStatus === 'connected'
+              ? 'bg-emerald-950/30 border-emerald-500/30 hover:bg-emerald-950/50 text-emerald-300'
+              : 'bg-slate-900/80 border-slate-800 hover:border-emerald-500/40 hover:bg-slate-900 text-slate-300'
+          }`}
+        >
+          <div className="flex items-center gap-2 font-bold text-[11px]">
+            <Zap className={`w-3.5 h-3.5 ${supabaseStatus === 'connected' ? 'text-emerald-400' : 'text-slate-400'}`} />
+            <span>Supabase DB</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span
+              className={`font-bold text-[10px] tracking-wider uppercase ${
+                supabaseStatus === 'connected' ? 'text-emerald-400' : 'text-slate-400'
+              }`}
+            >
+              {supabaseStatus === 'connected' ? '● Connected' : 'Configure'}
+            </span>
+          </div>
+        </button>
       </div>
 
       {/* Role permission status box */}

@@ -31,8 +31,20 @@ import {
   findBoutInRounds,
 } from '../utils/tournamentHelpers';
 import { exportMasterFullBackup } from '../utils/excelMasterHelper';
+import {
+  getSupabaseConfig,
+  testSupabaseConnection,
+  pushAllDataToSupabase,
+  pullAllDataFromSupabase,
+  subscribeToSupabaseTournament,
+} from '../services/supabaseClient';
 
 interface TournamentContextType {
+  supabaseStatus: 'connected' | 'disconnected' | 'connecting' | 'not_configured' | 'error';
+  supabaseModalOpen: boolean;
+  setSupabaseModalOpen: (open: boolean) => void;
+  syncToSupabase: () => Promise<{ success: boolean; message: string }>;
+  fetchFromSupabase: () => Promise<{ success: boolean; message: string }>;
   role: UserRole;
   setRole: (role: UserRole) => void;
   currentUser: User;
@@ -151,6 +163,10 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [currentUser, setCurrentUser] = useState<User>(GUEST_USER);
   const [activeTab, setActiveTab] = useState<string>('public');
   const [loginModalOpen, setLoginModalOpen] = useState<boolean>(false);
+  const [supabaseModalOpen, setSupabaseModalOpen] = useState<boolean>(false);
+  const [supabaseStatus, setSupabaseStatus] = useState<
+    'connected' | 'disconnected' | 'connecting' | 'not_configured' | 'error'
+  >('not_configured');
 
   const [event, setEvent] = useState<EventSetup>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_event`);
@@ -280,6 +296,142 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   useEffect(() => {
     localStorage.setItem(`${STORAGE_KEY}_audit`, JSON.stringify(auditLogs));
   }, [auditLogs]);
+
+  // ----------------------------------------------------
+  // SUPABASE BACKEND INTEGRATION & REALTIME SYNC
+  // ----------------------------------------------------
+  useEffect(() => {
+    const config = getSupabaseConfig();
+    if (!config.isConfigured) {
+      setSupabaseStatus('not_configured');
+      return;
+    }
+
+    setSupabaseStatus('connecting');
+    testSupabaseConnection()
+      .then(res => {
+        if (res.success) {
+          setSupabaseStatus('connected');
+          // Auto pull any remote records upon connecting
+          pullAllDataFromSupabase().then(pullRes => {
+            if (pullRes.success && pullRes.data) {
+              if (pullRes.data.events && pullRes.data.events.length > 0) {
+                setEvents(pullRes.data.events);
+                setEvent(pullRes.data.events[0]);
+              }
+              if (pullRes.data.ageCategories && pullRes.data.ageCategories.length > 0) {
+                setAgeCategoriesState(pullRes.data.ageCategories);
+              }
+              if (pullRes.data.weightCategories && pullRes.data.weightCategories.length > 0) {
+                setWeightCategoriesState(pullRes.data.weightCategories);
+              }
+              if (pullRes.data.players && pullRes.data.players.length > 0) {
+                setPlayers(pullRes.data.players);
+              }
+              if (pullRes.data.categories && pullRes.data.categories.length > 0) {
+                setCategories(pullRes.data.categories);
+              }
+              if (pullRes.data.brackets && pullRes.data.brackets.length > 0) {
+                setBrackets(pullRes.data.brackets);
+              }
+              if (pullRes.data.users && pullRes.data.users.length > 0) {
+                setUsers(pullRes.data.users);
+              }
+            }
+          }).catch(console.error);
+        } else {
+          setSupabaseStatus('error');
+        }
+      })
+      .catch(() => setSupabaseStatus('error'));
+  }, [supabaseModalOpen]);
+
+  // Supabase Realtime channel subscription for live sync across officials & spectators
+  useEffect(() => {
+    if (supabaseStatus !== 'connected') return;
+
+    const unsubscribe = subscribeToSupabaseTournament((table, eventType, newRecord) => {
+      if (!newRecord) return;
+      if (table === 'brackets') {
+        setBrackets(prev => {
+          const idx = prev.findIndex(b => b.id === newRecord.id);
+          if (idx >= 0) {
+            const copy = [...prev];
+            copy[idx] = {
+              id: newRecord.id,
+              categoryId: newRecord.category_id,
+              eventId: newRecord.event_id || prev[idx].eventId,
+              rounds: newRecord.rounds || [],
+              generatedAt: newRecord.generated_at || prev[idx].generatedAt,
+              isLocked: Boolean(newRecord.is_locked),
+            };
+            return copy;
+          }
+          return prev;
+        });
+      } else if (table === 'events') {
+        setEvent(prev => (prev.id === newRecord.id ? {
+          ...prev,
+          id: newRecord.id,
+          name: newRecord.name,
+          startDate: newRecord.start_date,
+          endDate: newRecord.end_date,
+          tournamentReferenceDate: newRecord.tournament_reference_date || prev.tournamentReferenceDate,
+          organizer: newRecord.organizer || prev.organizer,
+          venue: newRecord.venue || prev.venue,
+          city: newRecord.city || prev.city,
+          state: newRecord.state || prev.state,
+          rings: newRecord.rings || prev.rings,
+          isLive: newRecord.is_live !== false,
+        } : prev));
+      }
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [supabaseStatus]);
+
+  // Sync all current state to Supabase
+  const syncToSupabase = async (): Promise<{ success: boolean; message: string }> => {
+    const res = await pushAllDataToSupabase({
+      events,
+      players,
+      categories,
+      brackets,
+      users,
+      auditLogs,
+      ageCategories,
+      weightCategories,
+    });
+    if (res.success) {
+      setSupabaseStatus('connected');
+    }
+    return res;
+  };
+
+  // Pull all data from Supabase into local state
+  const fetchFromSupabase = async (): Promise<{ success: boolean; message: string }> => {
+    const res = await pullAllDataFromSupabase();
+    if (res.success && res.data) {
+      if (res.data.events && res.data.events.length > 0) {
+        setEvents(res.data.events);
+        const currentId = event.id;
+        const matched = res.data.events.find(e => e.id === currentId) || res.data.events[0];
+        setEvent(matched);
+      }
+      if (res.data.players) setPlayers(res.data.players);
+      if (res.data.categories) setCategories(res.data.categories);
+      if (res.data.brackets) setBrackets(res.data.brackets);
+      if (res.data.users) setUsers(res.data.users);
+      if (res.data.auditLogs) setAuditLogs(res.data.auditLogs);
+      if (res.data.ageCategories) setAgeCategoriesState(res.data.ageCategories);
+      if (res.data.weightCategories) setWeightCategoriesState(res.data.weightCategories);
+      setSupabaseStatus('connected');
+      return { success: true, message: res.message };
+    }
+    return { success: false, message: res.message || 'Failed to pull from Supabase' };
+  };
 
   // Authentication status
   const isLoggedIn = role !== 'general_view' && currentUser.id !== 'guest';
@@ -1444,6 +1596,11 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   return (
     <TournamentContext.Provider
       value={{
+        supabaseStatus,
+        supabaseModalOpen,
+        setSupabaseModalOpen,
+        syncToSupabase,
+        fetchFromSupabase,
         role,
         setRole,
         currentUser,

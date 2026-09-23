@@ -16,6 +16,7 @@ import { ExportReportsView } from './components/exports/ExportReportsView';
 import { MasterAdminPanel } from './components/master/MasterAdminPanel';
 import { InactiveEventLockoutView } from './components/common/InactiveEventLockoutView';
 import { LoginModal } from './components/auth/LoginModal';
+import { SupabaseSettingsModal } from './components/supabase/SupabaseSettingsModal';
 import {
   LayoutDashboard,
   Users,
@@ -26,7 +27,16 @@ import {
 } from 'lucide-react';
 
 const MainAppContent: React.FC = () => {
-  const { activeTab, setActiveTab, role, isLoggedIn, setLoginModalOpen, canWorkOnEvent } = useTournament();
+  const {
+    activeTab,
+    setActiveTab,
+    role,
+    isLoggedIn,
+    setLoginModalOpen,
+    canWorkOnEvent,
+    supabaseModalOpen,
+    setSupabaseModalOpen,
+  } = useTournament();
 
   const renderContent = () => {
     // If user is not super_admin and current event is not live, block work on that event
@@ -100,6 +110,12 @@ const MainAppContent: React.FC = () => {
 
       {/* Login Modal */}
       <LoginModal />
+
+      {/* Supabase Cloud Backend Manager Modal */}
+      <SupabaseSettingsModal
+        isOpen={supabaseModalOpen}
+        onClose={() => setSupabaseModalOpen(false)}
+      />
 
       {/* Mobile Bottom Navigation Bar (hidden on md and larger) */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-md border-t border-slate-800 px-2 py-1.5 flex items-center justify-around text-[10px]">
