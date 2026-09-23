@@ -37,6 +37,34 @@ import {
   pushAllDataToSupabase,
   pullAllDataFromSupabase,
   subscribeToSupabaseTournament,
+  mapRowToPlayer,
+  mapRowToCategory,
+  mapRowToBracket,
+  mapRowToEvent,
+  mapRowToUser,
+  mapRowToAgeCategory,
+  mapRowToWeightCategory,
+  supabaseUpsertPlayer,
+  supabaseDeletePlayer,
+  supabaseBulkUpsertPlayers,
+  supabaseClearPlayers,
+  supabaseUpsertCategory,
+  supabaseDeleteCategory,
+  supabaseClearCategories,
+  supabaseUpsertBracket,
+  supabaseDeleteBracket,
+  supabaseClearBrackets,
+  supabaseUpsertEvent,
+  supabaseDeleteEvent,
+  supabaseUpsertWeightCategory,
+  supabaseDeleteWeightCategory,
+  supabaseBulkUpsertWeightCategories,
+  supabaseUpsertAgeCategory,
+  supabaseDeleteAgeCategory,
+  supabaseBulkUpsertAgeCategories,
+  supabaseUpsertUser,
+  supabaseDeleteUser,
+  supabaseInsertAuditLog,
 } from '../services/supabaseClient';
 
 interface TournamentContextType {
@@ -327,6 +355,18 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               }
               if (pullRes.data.players && pullRes.data.players.length > 0) {
                 setPlayers(pullRes.data.players);
+              } else if (players.length > 0) {
+                // If Supabase has no players yet, seed initial tournament roster to Supabase
+                pushAllDataToSupabase({
+                  events,
+                  players,
+                  categories,
+                  brackets,
+                  users,
+                  auditLogs,
+                  ageCategories,
+                  weightCategories,
+                });
               }
               if (pullRes.data.categories && pullRes.data.categories.length > 0) {
                 setCategories(pullRes.data.categories);
@@ -350,40 +390,82 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   useEffect(() => {
     if (supabaseStatus !== 'connected') return;
 
-    const unsubscribe = subscribeToSupabaseTournament((table, eventType, newRecord) => {
+    const unsubscribe = subscribeToSupabaseTournament((table, eventType, newRecord, oldRecord) => {
+      const targetId = (oldRecord && oldRecord.id) || (newRecord && newRecord.id);
+
+      if (eventType === 'DELETE') {
+        if (!targetId) return;
+        if (table === 'players') {
+          setPlayers(prev => prev.filter(p => p.id !== targetId));
+        } else if (table === 'categories') {
+          setCategories(prev => prev.filter(c => c.id !== targetId));
+          setBrackets(prev => prev.filter(b => b.categoryId !== targetId));
+        } else if (table === 'brackets') {
+          setBrackets(prev => prev.filter(b => b.id !== targetId));
+        } else if (table === 'events') {
+          setEvents(prev => prev.filter(e => e.id !== targetId));
+        } else if (table === 'tournament_users') {
+          setUsers(prev => prev.filter(u => u.id !== targetId));
+        } else if (table === 'age_categories') {
+          setAgeCategoriesState(prev => prev.filter(a => a.id !== targetId));
+        } else if (table === 'weight_categories') {
+          setWeightCategoriesState(prev => prev.filter(w => w.id !== targetId));
+        }
+        return;
+      }
+
       if (!newRecord) return;
+
       if (table === 'brackets') {
+        const b = mapRowToBracket(newRecord);
         setBrackets(prev => {
-          const idx = prev.findIndex(b => b.id === newRecord.id);
-          if (idx >= 0) {
-            const copy = [...prev];
-            copy[idx] = {
-              id: newRecord.id,
-              categoryId: newRecord.category_id,
-              eventId: newRecord.event_id || prev[idx].eventId,
-              rounds: newRecord.rounds || [],
-              generatedAt: newRecord.generated_at || prev[idx].generatedAt,
-              isLocked: Boolean(newRecord.is_locked),
-            };
-            return copy;
-          }
-          return prev;
+          const idx = prev.findIndex(item => item.id === b.id);
+          if (idx >= 0) return prev.map(item => (item.id === b.id ? b : item));
+          return [...prev, b];
         });
       } else if (table === 'events') {
-        setEvent(prev => (prev.id === newRecord.id ? {
-          ...prev,
-          id: newRecord.id,
-          name: newRecord.name,
-          startDate: newRecord.start_date,
-          endDate: newRecord.end_date,
-          tournamentReferenceDate: newRecord.tournament_reference_date || prev.tournamentReferenceDate,
-          organizer: newRecord.organizer || prev.organizer,
-          venue: newRecord.venue || prev.venue,
-          city: newRecord.city || prev.city,
-          state: newRecord.state || prev.state,
-          rings: newRecord.rings || prev.rings,
-          isLive: newRecord.is_live !== false,
-        } : prev));
+        const e = mapRowToEvent(newRecord);
+        setEvents(prev => {
+          const idx = prev.findIndex(item => item.id === e.id);
+          if (idx >= 0) return prev.map(item => (item.id === e.id ? e : item));
+          return [...prev, e];
+        });
+        setEvent(prev => (prev.id === e.id ? e : prev));
+      } else if (table === 'players') {
+        const p = mapRowToPlayer(newRecord);
+        setPlayers(prev => {
+          const idx = prev.findIndex(item => item.id === p.id);
+          if (idx >= 0) return prev.map(item => (item.id === p.id ? p : item));
+          return [p, ...prev];
+        });
+      } else if (table === 'categories') {
+        const c = mapRowToCategory(newRecord);
+        setCategories(prev => {
+          const idx = prev.findIndex(item => item.id === c.id);
+          if (idx >= 0) return prev.map(item => (item.id === c.id ? c : item));
+          return [...prev, c];
+        });
+      } else if (table === 'tournament_users') {
+        const u = mapRowToUser(newRecord);
+        setUsers(prev => {
+          const idx = prev.findIndex(item => item.id === u.id);
+          if (idx >= 0) return prev.map(item => (item.id === u.id ? u : item));
+          return [...prev, u];
+        });
+      } else if (table === 'age_categories') {
+        const a = mapRowToAgeCategory(newRecord);
+        setAgeCategoriesState(prev => {
+          const idx = prev.findIndex(item => item.id === a.id);
+          if (idx >= 0) return prev.map(item => (item.id === a.id ? a : item));
+          return [...prev, a];
+        });
+      } else if (table === 'weight_categories') {
+        const w = mapRowToWeightCategory(newRecord);
+        setWeightCategoriesState(prev => {
+          const idx = prev.findIndex(item => item.id === w.id);
+          if (idx >= 0) return prev.map(item => (item.id === w.id ? w : item));
+          return [...prev, w];
+        });
       }
     });
 
@@ -391,6 +473,17 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       if (unsubscribe) unsubscribe();
     };
   }, [supabaseStatus]);
+
+  // Real-time debounced auto-sync for live bracket scoring events
+  useEffect(() => {
+    if (supabaseStatus !== 'connected' || brackets.length === 0) return;
+    const timer = setTimeout(() => {
+      brackets.forEach(b => {
+        supabaseUpsertBracket(b);
+      });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [brackets, supabaseStatus]);
 
   // Sync all current state to Supabase
   const syncToSupabase = async (): Promise<{ success: boolean; message: string }> => {
@@ -513,6 +606,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       details,
     };
     setAuditLogs(prev => [newLog, ...prev]);
+    supabaseInsertAuditLog(newLog);
   };
 
   // Event updates & Master creation
@@ -521,6 +615,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setEvent(prev => {
       const next = { ...prev, ...updated };
       setEvents(list => list.map(e => (e.id === next.id ? next : e)));
+      supabaseUpsertEvent(next);
       addAuditLog('EVENT_SETUP', next.name || 'Tournament Event', `Updated tournament parameters: ${Object.keys(updated).join(', ')}`);
       return next;
     });
@@ -547,11 +642,15 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       return [...prev, nextEvent];
     });
     setEvent(nextEvent);
+    supabaseUpsertEvent(nextEvent);
 
     if (clearExistingRoster) {
       setPlayers([]);
       setCategories([]);
       setBrackets([]);
+      supabaseClearPlayers();
+      supabaseClearCategories();
+      supabaseClearBrackets();
       addAuditLog(
         'EVENT_SETUP',
         nextEvent.name || 'New Championship',
@@ -577,11 +676,18 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         if (e.id === eventId) {
           resultingStatus = targetLive !== undefined ? targetLive : !e.isLive;
           targetName = e.name;
-          return {
+          const newStatus: 'upcoming' | 'ongoing' | 'completed' = resultingStatus
+            ? 'ongoing'
+            : e.status === 'completed'
+            ? 'completed'
+            : 'upcoming';
+          const updatedEvent: EventSetup = {
             ...e,
             isLive: resultingStatus,
-            status: resultingStatus ? 'ongoing' : e.status === 'completed' ? 'completed' : 'upcoming',
+            status: newStatus,
           };
+          supabaseUpsertEvent(updatedEvent);
+          return updatedEvent;
         }
         return e;
       })
@@ -590,11 +696,18 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setEvent(prev => {
       if (prev.id === eventId) {
         const nextLive = targetLive !== undefined ? targetLive : !prev.isLive;
-        return {
+        const newStatus: 'upcoming' | 'ongoing' | 'completed' = nextLive
+          ? 'ongoing'
+          : prev.status === 'completed'
+          ? 'completed'
+          : 'upcoming';
+        const updatedEvent: EventSetup = {
           ...prev,
           isLive: nextLive,
-          status: nextLive ? 'ongoing' : prev.status === 'completed' ? 'completed' : 'upcoming',
+          status: newStatus,
         };
+        supabaseUpsertEvent(updatedEvent);
+        return updatedEvent;
       }
       return prev;
     });
@@ -635,6 +748,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       };
       setEvents([fallbackEvent]);
       setEvent(fallbackEvent);
+      supabaseUpsertEvent(fallbackEvent);
     } else {
       setEvents(remaining);
       if (event.id === eventId) {
@@ -642,6 +756,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }
     }
 
+    supabaseDeleteEvent(eventId);
     addAuditLog('EVENT_DELETE', target.name || eventId, `Super Admin deleted championship event: ${target.name} (${eventId})`);
     return { success: true };
   };
@@ -653,6 +768,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const setAgeCategories = (cats: AgeCategory[]) => {
     if (role === 'general_view') return;
     setAgeCategoriesState(cats);
+    supabaseBulkUpsertAgeCategories(cats);
     addAuditLog('UPDATE', 'Age Categories', `Updated age divisions list (${cats.length} divisions)`);
   };
 
@@ -663,12 +779,22 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       id: `age-cat-${Date.now()}`,
     };
     setAgeCategoriesState(prev => [...prev, newCat]);
+    supabaseUpsertAgeCategory(newCat);
     addAuditLog('CREATE', `Age Category: ${newCat.name}`, `${newCat.minAge}-${newCat.maxAge} years on reference date`);
   };
 
   const updateAgeCategory = (id: string, updated: Partial<AgeCategory>) => {
     if (role === 'general_view') return;
-    setAgeCategoriesState(prev => prev.map(c => (c.id === id ? { ...c, ...updated } : c)));
+    setAgeCategoriesState(prev =>
+      prev.map(c => {
+        if (c.id === id) {
+          const mod = { ...c, ...updated };
+          supabaseUpsertAgeCategory(mod);
+          return mod;
+        }
+        return c;
+      })
+    );
     addAuditLog('UPDATE', `Age Category: ${id}`, `Updated division settings`);
   };
 
@@ -676,12 +802,14 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (role === 'general_view') return;
     const target = ageCategories.find(c => c.id === id);
     setAgeCategoriesState(prev => prev.filter(c => c.id !== id));
+    supabaseDeleteAgeCategory(id);
     addAuditLog('DELETE', `Age Category: ${target?.name || id}`, `Removed age category`);
   };
 
   const resetAgeCategories = () => {
     if (role === 'general_view') return;
     setAgeCategoriesState(INITIAL_AGE_CATEGORIES);
+    supabaseBulkUpsertAgeCategories(INITIAL_AGE_CATEGORIES);
     addAuditLog('UPDATE', 'Age Categories', 'Reset to official IWUF age classifications');
   };
 
@@ -689,6 +817,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const setWeightCategories = (cats: WeightCategory[]) => {
     if (role === 'general_view') return;
     setWeightCategoriesState(cats);
+    supabaseBulkUpsertWeightCategories(cats);
     addAuditLog('UPDATE', 'Weight Divisions', `Updated weight divisions list (${cats.length} divisions)`);
   };
 
@@ -699,12 +828,22 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       id: `wt-cat-${Date.now()}`,
     };
     setWeightCategoriesState(prev => [...prev, newCat]);
+    supabaseUpsertWeightCategory(newCat);
     addAuditLog('CREATE', `Weight Division: ${newCat.name}`, `${newCat.gender} ${newCat.minWeightKg}-${newCat.maxWeightKg} kg`);
   };
 
   const updateWeightCategory = (id: string, updated: Partial<WeightCategory>) => {
     if (role === 'general_view') return;
-    setWeightCategoriesState(prev => prev.map(c => (c.id === id ? { ...c, ...updated } : c)));
+    setWeightCategoriesState(prev =>
+      prev.map(c => {
+        if (c.id === id) {
+          const mod = { ...c, ...updated };
+          supabaseUpsertWeightCategory(mod);
+          return mod;
+        }
+        return c;
+      })
+    );
     addAuditLog('UPDATE', `Weight Division: ${id}`, `Updated weight limits`);
   };
 
@@ -712,12 +851,14 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (role === 'general_view') return;
     const target = weightCategories.find(c => c.id === id);
     setWeightCategoriesState(prev => prev.filter(c => c.id !== id));
+    supabaseDeleteWeightCategory(id);
     addAuditLog('DELETE', `Weight Division: ${target?.name || id}`, `Removed weight division`);
   };
 
   const resetWeightCategories = () => {
     if (role === 'general_view') return;
     setWeightCategoriesState(INITIAL_WEIGHT_CATEGORIES);
+    supabaseBulkUpsertWeightCategories(INITIAL_WEIGHT_CATEGORIES);
     addAuditLog('UPDATE', 'Weight Divisions', 'Reset to official IWUF Sanda weight categories');
   };
 
@@ -743,6 +884,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     };
 
     setPlayers(prev => [newPlayer, ...prev]);
+    supabaseUpsertPlayer(newPlayer);
     addAuditLog('CREATE', `Player: ${newPlayer.name}`, `Reg #${newPlayer.registrationNumber}, Club: ${newPlayer.clubSchool}, Weight: ${newPlayer.weightKg}kg`);
     return { success: true, player: newPlayer };
   };
@@ -754,7 +896,9 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const target = players.find(p => p.id === id);
     if (!target) return { success: false, error: 'Player not found.' };
 
-    setPlayers(prev => prev.map(p => (p.id === id ? { ...p, ...playerData } : p)));
+    const updatedPlayer = { ...target, ...playerData };
+    setPlayers(prev => prev.map(p => (p.id === id ? updatedPlayer : p)));
+    supabaseUpsertPlayer(updatedPlayer);
     addAuditLog('UPDATE', `Player: ${target.name}`, `Updated details: ${Object.keys(playerData).join(', ')}`);
     return { success: true };
   };
@@ -768,6 +912,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (!target) return { success: false, error: 'Player not found.' };
 
     setPlayers(prev => prev.filter(p => p.id !== id));
+    supabaseDeletePlayer(id);
     addAuditLog('DELETE', `Player: ${target.name}`, `Reg #${target.registrationNumber} deleted permanently by Super Admin.`);
     return { success: true };
   };
@@ -808,8 +953,10 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     if (replace) {
       setPlayers(validNewPlayers);
+      supabaseClearPlayers().then(() => supabaseBulkUpsertPlayers(validNewPlayers));
     } else {
       setPlayers(prev => [...validNewPlayers, ...prev]);
+      supabaseBulkUpsertPlayers(validNewPlayers);
     }
 
     addAuditLog(
@@ -826,6 +973,9 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setPlayers([]);
     setCategories([]);
     setBrackets([]);
+    supabaseClearPlayers();
+    supabaseClearCategories();
+    supabaseClearBrackets();
     addAuditLog('DELETE', 'All Athletes', 'Super Admin cleared player database and related fixtures');
   };
 
@@ -833,6 +983,8 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (role !== 'super_admin' && role !== 'admin') return;
     setCategories([]);
     setBrackets([]);
+    supabaseClearCategories();
+    supabaseClearBrackets();
     addAuditLog('DELETE', 'Categories & Fixtures', 'Super Admin cleared all divisions and tournament brackets');
   };
 
@@ -867,6 +1019,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     };
 
     setCategories(prev => [...prev, newCategory]);
+    supabaseUpsertCategory(newCategory);
     addAuditLog('CREATE', `Category: ${newCategory.name}`, `Created with ${eligible.length} matched eligible fighters.`);
     return newCategory;
   };
@@ -876,13 +1029,15 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setCategories(prev =>
       prev.map(c => {
         if (c.id === categoryId) {
-          addAuditLog('LOCK_CATEGORY', `Category: ${c.name}`, `Locked eligible roster (${c.eligiblePlayerIds.length} fighters) for fixture generation.`);
-          return {
+          const mod = {
             ...c,
             isLocked: true,
             confirmedAt: new Date().toISOString(),
             confirmedBy: currentUser.name,
           };
+          supabaseUpsertCategory(mod);
+          addAuditLog('LOCK_CATEGORY', `Category: ${c.name}`, `Locked eligible roster (${c.eligiblePlayerIds.length} fighters) for fixture generation.`);
+          return mod;
         }
         return c;
       })
@@ -894,13 +1049,15 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setCategories(prev =>
       prev.map(c => {
         if (c.id === categoryId) {
-          addAuditLog('UPDATE', `Category: ${c.name}`, `Unlocked category roster by ${currentUser.name}.`);
-          return {
+          const mod = {
             ...c,
             isLocked: false,
             confirmedAt: undefined,
             confirmedBy: undefined,
           };
+          supabaseUpsertCategory(mod);
+          addAuditLog('UPDATE', `Category: ${c.name}`, `Unlocked category roster by ${currentUser.name}.`);
+          return mod;
         }
         return c;
       })
@@ -914,8 +1071,13 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const cat = categories.find(c => c.id === categoryId);
     if (!cat) return { success: false, error: 'Category not found.' };
 
+    const assocBrackets = brackets.filter(b => b.categoryId === categoryId);
     setCategories(prev => prev.filter(c => c.id !== categoryId));
     setBrackets(prev => prev.filter(b => b.categoryId !== categoryId));
+    
+    supabaseDeleteCategory(categoryId);
+    assocBrackets.forEach(b => supabaseDeleteBracket(b.id));
+
     addAuditLog('DELETE', `Category: ${cat.name}`, `Deleted category and associated brackets.`);
     return { success: true };
   };
@@ -941,6 +1103,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         const filtered = prev.filter(b => b.categoryId !== categoryId);
         return [...filtered, bracket];
       });
+      supabaseUpsertBracket(bracket);
 
       addAuditLog(
         'BRACKET_GENERATE',
@@ -970,6 +1133,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         const filtered = prev.filter(b => b.categoryId !== categoryId);
         return [...filtered, bracket];
       });
+      supabaseUpsertBracket(bracket);
 
       addAuditLog(
         'BRACKET_REGENERATE',
@@ -1214,6 +1378,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     );
 
     setBrackets(prev => prev.map(b => (b.id === advancedBracket.id ? advancedBracket : b)));
+    supabaseUpsertBracket(advancedBracket);
 
     // Clear active scoring bout or update it
     const updatedTargetBout = findBoutInRounds(advancedBracket.rounds, boutId);
@@ -1253,6 +1418,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     const reopenedBracket = reopenBoutInBracket(targetBracket, boutId, reason);
     setBrackets(prev => prev.map(b => (b.id === reopenedBracket.id ? reopenedBracket : b)));
+    supabaseUpsertBracket(reopenedBracket);
 
     const reopenedBout = findBoutInRounds(reopenedBracket.rounds, boutId);
     if (activeBoutForScoring?.id === boutId) {
@@ -1274,8 +1440,10 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setUsers(prev =>
       prev.map(u => {
         if (u.id === userId) {
+          const updated = { ...u, role: newRole };
+          supabaseUpsertUser(updated);
           addAuditLog('ROLE_CHANGE', `User: ${u.name}`, `Role changed from ${u.role} to ${newRole}`);
-          return { ...u, role: newRole };
+          return updated;
         }
         return u;
       })
@@ -1327,6 +1495,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     };
 
     setUsers(prev => [...prev, newUser]);
+    supabaseUpsertUser(newUser);
     addAuditLog(
       'CREATE',
       `Official: ${newUser.name}`,
@@ -1355,6 +1524,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
 
     setUsers(prev => prev.filter(u => u.id !== userId));
+    supabaseDeleteUser(userId);
     addAuditLog('DELETE', `Official: ${target.name}`, `Deleted ${target.role} account (${target.email})`);
     return { success: true };
   };
@@ -1368,6 +1538,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       prev.map(u => {
         if (u.id === userId) {
           const updated = { ...u, ...data };
+          supabaseUpsertUser(updated);
           addAuditLog('ROLE_CHANGE', `Official: ${u.name}`, `Updated details: ${Object.keys(data).join(', ')}`);
           return updated;
         }
@@ -1393,6 +1564,12 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setUsers(INITIAL_USERS);
     setAuditLogs(INITIAL_AUDIT_LOGS);
     setActiveBoutForScoring(null);
+
+    supabaseClearPlayers();
+    supabaseClearCategories();
+    supabaseClearBrackets();
+    supabaseBulkUpsertPlayers(INITIAL_PLAYERS);
+    supabaseUpsertEvent(INITIAL_EVENT);
   };
 
   const exportDataAsCSV = (type: 'players' | 'bouts' | 'results' | 'audit') => {
