@@ -1,0 +1,6 @@
+{
+  "name": "Wushu Event Management System",
+  "description": "Comprehensive tournament platform for Wushu & Sanda martial arts events with manual registration, category grouping, knockout fixture brackets, live corner scoring, and public view.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
