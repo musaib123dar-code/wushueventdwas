@@ -539,15 +539,18 @@ export const MasterAdminPanel: React.FC = () => {
         <div className="ml-auto flex items-center gap-2">
           <button
             onClick={() => setSupabaseModalOpen(true)}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold cursor-pointer transition-all border ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all border ${
               supabaseStatus === 'connected'
-                ? 'bg-emerald-950/50 hover:bg-emerald-900/50 text-emerald-300 border-emerald-500/40 shadow-xs'
-                : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                ? 'bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 border-emerald-500/40 shadow-xs shadow-emerald-500/20'
+                : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700 hover:border-emerald-500/40'
             }`}
             title="Configure Supabase Cloud Backend, live sync & SQL Schema"
           >
             <Zap className={`w-3.5 h-3.5 ${supabaseStatus === 'connected' ? 'text-emerald-400' : 'text-slate-400'}`} />
-            <span>Supabase DB ({supabaseStatus === 'connected' ? 'Connected' : 'Configure'})</span>
+            <span>{supabaseStatus === 'connected' ? 'Supabase Live' : 'Supabase DB'}</span>
+            {supabaseStatus === 'connected' && (
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            )}
           </button>
 
           <button
@@ -1373,7 +1376,7 @@ export const MasterAdminPanel: React.FC = () => {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
               {/* Option A: Initialize Brand New Event */}
               <div className="p-5 rounded-xl border border-amber-500/40 bg-slate-950 space-y-3 flex flex-col justify-between">
                 <div className="space-y-2">
@@ -1431,6 +1434,38 @@ export const MasterAdminPanel: React.FC = () => {
                   className="w-full py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-lg text-xs transition-colors cursor-pointer"
                 >
                   Clear All Registered Athletes ({players.length})
+                </button>
+              </div>
+
+              {/* Option D: Supabase Cloud Database */}
+              <div className="p-5 rounded-xl border border-emerald-500/40 bg-slate-950 space-y-3 flex flex-col justify-between">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
+                    <Zap className="w-4 h-4" />
+                    Supabase Cloud Database
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-bold text-white">PostgreSQL Realtime Sync</h4>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                        supabaseStatus === 'connected'
+                          ? 'bg-emerald-950/80 text-emerald-400 border-emerald-500/50'
+                          : 'bg-slate-900 text-slate-400 border-slate-700'
+                      }`}
+                    >
+                      {supabaseStatus === 'connected' ? '● Connected' : 'Not Connected'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Manage real-time cloud persistence, cross-device spectator synchronization, database credentials, and SQL schema tables.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSupabaseModalOpen(true)}
+                  className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-xs shadow-emerald-500/20"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>Configure Supabase Cloud</span>
                 </button>
               </div>
             </div>

@@ -198,30 +198,6 @@ export const Header: React.FC = () => {
             <span className="whitespace-nowrap">Print</span>
           </button>
 
-          {/* Supabase Cloud Backend status & manager button */}
-          <button
-            onClick={() => setSupabaseModalOpen(true)}
-            title={
-              supabaseStatus === 'connected'
-                ? 'Supabase Backend Connected - Click to manage sync & settings'
-                : 'Configure Supabase PostgreSQL Backend'
-            }
-            className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
-              supabaseStatus === 'connected'
-                ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-400 hover:bg-emerald-900/60 shadow-xs shadow-emerald-500/20'
-                : supabaseStatus === 'connecting'
-                ? 'bg-sky-950/60 border-sky-500/40 text-sky-400 hover:bg-sky-900/60'
-                : 'bg-slate-900 border-slate-800 text-slate-300 hover:text-emerald-400 hover:border-emerald-500/40'
-            }`}
-          >
-            <Zap className={`w-3.5 h-3.5 ${supabaseStatus === 'connected' ? 'text-emerald-400' : 'text-slate-400'}`} />
-            <span className="hidden md:inline font-semibold">
-              {supabaseStatus === 'connected' ? 'Supabase Live' : 'Supabase'}
-            </span>
-            {supabaseStatus === 'connected' && (
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-            )}
-          </button>
 
           {/* Authentication State Button */}
           {!isLoggedIn ? (
