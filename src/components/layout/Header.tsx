@@ -20,9 +20,14 @@ import {
   RotateCcw,
   Zap,
   Database,
+  Menu,
 } from 'lucide-react';
 
-export const Header: React.FC = () => {
+interface HeaderProps {
+  onOpenMobileMenu?: () => void;
+}
+
+export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu }) => {
   const {
     role,
     isLoggedIn,
@@ -233,6 +238,18 @@ export const Header: React.FC = () => {
                 <span className="hidden sm:inline">Log Out</span>
               </button>
             </div>
+          )}
+
+          {/* Mobile navigation menu toggle button */}
+          {onOpenMobileMenu && (
+            <button
+              onClick={onOpenMobileMenu}
+              aria-label="Open navigation menu"
+              title="Open menu"
+              className="md:hidden p-2 text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl transition-colors cursor-pointer flex items-center justify-center shrink-0"
+            >
+              <Menu className="w-4 h-4 text-amber-400" />
+            </button>
           )}
         </div>
       </div>

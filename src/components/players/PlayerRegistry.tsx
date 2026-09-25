@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { useTournament } from '../../context/TournamentContext';
 import { Player } from '../../types/tournament';
 import { calculateAge, formatDate } from '../../utils/tournamentHelpers';
+import { downloadPlayerExcelTemplate } from '../../utils/excelMasterHelper';
+import { BulkPlayerUploadModal } from './BulkPlayerUploadModal';
 import {
   UserPlus,
   Search,
@@ -34,6 +36,7 @@ export const PlayerRegistry: React.FC = () => {
   const [selectedGender, setSelectedGender] = useState<string>('all');
   const [selectedDistrict, setSelectedDistrict] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -187,23 +190,35 @@ export const PlayerRegistry: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
           <button
             onClick={() => exportDataAsCSV('players')}
             className="px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-lg border border-slate-800 transition-colors flex items-center gap-1.5"
+            title="Export player records as CSV file"
           >
             <Download className="w-3.5 h-3.5 text-slate-400" />
             <span>Export CSV</span>
           </button>
 
           {canEdit && (
-            <button
-              onClick={openAddModal}
-              className="px-3.5 py-2 text-xs font-semibold text-slate-950 bg-amber-500 hover:bg-amber-400 rounded-lg transition-colors flex items-center gap-1.5 shadow-md shadow-amber-500/10"
-            >
-              <UserPlus className="w-4 h-4" />
-              <span>Manual Registration</span>
-            </button>
+            <>
+              <button
+                onClick={() => setIsBulkModalOpen(true)}
+                className="px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors flex items-center gap-1.5 shadow-md shadow-emerald-600/20"
+                title="Bulk register athletes by uploading an Excel (.xlsx, .xls) or CSV spreadsheet"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
+                <span>Bulk Excel Upload</span>
+              </button>
+
+              <button
+                onClick={openAddModal}
+                className="px-3.5 py-2 text-xs font-semibold text-slate-950 bg-amber-500 hover:bg-amber-400 rounded-lg transition-colors flex items-center gap-1.5 shadow-md shadow-amber-500/10"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>Manual Registration</span>
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -345,8 +360,32 @@ export const PlayerRegistry: React.FC = () => {
                 })
               ) : (
                 <tr>
-                  <td colSpan={11} className="py-8 text-center text-slate-500">
-                    No matching players found for the current search/filter criteria.
+                  <td colSpan={11} className="py-12 text-center text-slate-500">
+                    <div className="flex flex-col items-center justify-center max-w-sm mx-auto">
+                      <FileSpreadsheet className="w-8 h-8 text-slate-600 mb-2" />
+                      <p className="text-xs text-slate-400 font-medium">
+                        {players.length === 0
+                          ? 'No players registered yet.'
+                          : 'No matching players found for the current search/filter criteria.'}
+                      </p>
+                      {players.length === 0 && canEdit && (
+                        <div className="flex items-center gap-2.5 mt-4">
+                          <button
+                            onClick={() => setIsBulkModalOpen(true)}
+                            className="px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors flex items-center gap-1.5 shadow-md shadow-emerald-600/20"
+                          >
+                            <FileSpreadsheet className="w-3.5 h-3.5" />
+                            <span>Bulk Upload Excel</span>
+                          </button>
+                          <button
+                            onClick={openAddModal}
+                            className="px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 transition-colors"
+                          >
+                            Manual Entry
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </td>
                 </tr>
               )}
@@ -584,6 +623,14 @@ export const PlayerRegistry: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Bulk Excel Player Registration Modal */}
+      {isBulkModalOpen && (
+        <BulkPlayerUploadModal
+          isOpen={isBulkModalOpen}
+          onClose={() => setIsBulkModalOpen(false)}
+        />
       )}
     </div>
   );

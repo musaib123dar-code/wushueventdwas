@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { TournamentProvider, useTournament } from './context/TournamentContext';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
+import { MobileDrawer } from './components/layout/MobileDrawer';
 import { OverviewDashboard } from './components/dashboard/OverviewDashboard';
 import { PlayerRegistry } from './components/players/PlayerRegistry';
 import { CategoryManager } from './components/categories/CategoryManager';
@@ -17,6 +18,7 @@ import { MasterAdminPanel } from './components/master/MasterAdminPanel';
 import { InactiveEventLockoutView } from './components/common/InactiveEventLockoutView';
 import { LoginModal } from './components/auth/LoginModal';
 import { SupabaseSettingsModal } from './components/supabase/SupabaseSettingsModal';
+import { soundEffects } from './utils/soundEffects';
 import {
   LayoutDashboard,
   Users,
@@ -24,6 +26,7 @@ import {
   Swords,
   Tv,
   Lock,
+  Menu,
 } from 'lucide-react';
 
 const MainAppContent: React.FC = () => {
@@ -37,6 +40,16 @@ const MainAppContent: React.FC = () => {
     supabaseModalOpen,
     setSupabaseModalOpen,
   } = useTournament();
+
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+
+  const toggleSound = () => {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    soundEffects.enabled = next;
+    if (next) soundEffects.playBell();
+  };
 
   const renderContent = () => {
     // If user is not super_admin and current event is not live, block work on that event
@@ -97,16 +110,24 @@ const MainAppContent: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-amber-500 selection:text-slate-950">
       {/* Top Header */}
-      <Header />
+      <Header onOpenMobileMenu={() => setMobileDrawerOpen(true)} />
 
       {/* Main Body with Sidebar + Content */}
       <div className="flex-1 flex max-w-7xl w-full mx-auto">
         <Sidebar />
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">
+        <main className="flex-1 p-3.5 sm:p-6 lg:p-8 min-w-0 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-8">
           {renderContent()}
         </main>
       </div>
+
+      {/* Mobile Slide-Out Drawer Menu */}
+      <MobileDrawer
+        isOpen={mobileDrawerOpen}
+        onClose={() => setMobileDrawerOpen(false)}
+        soundEnabled={soundEnabled}
+        toggleSound={toggleSound}
+      />
 
       {/* Login Modal */}
       <LoginModal />
@@ -118,7 +139,7 @@ const MainAppContent: React.FC = () => {
       />
 
       {/* Mobile Bottom Navigation Bar (hidden on md and larger) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-md border-t border-slate-800 px-2 py-1.5 flex items-center justify-around text-[10px]">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-md border-t border-slate-800 px-2 py-1.5 pb-[calc(0.4rem+env(safe-area-inset-bottom,0px))] flex items-center justify-around text-[10px]">
         <button
           onClick={() => setActiveTab('dashboard')}
           className={`flex flex-col items-center gap-1 p-1 ${
@@ -136,11 +157,17 @@ const MainAppContent: React.FC = () => {
           }`}
         >
           <Users className="w-4 h-4" />
-          <span>Players</span>
+          <span>Athletes</span>
         </button>
 
         <button
-          onClick={() => setActiveTab('live-scoring')}
+          onClick={() => {
+            if (isLoggedIn) {
+              setActiveTab('live-scoring');
+            } else {
+              setLoginModalOpen(true);
+            }
+          }}
           className={`flex flex-col items-center gap-1 p-1 ${
             activeTab === 'live-scoring' ? 'text-red-400 font-semibold' : 'text-slate-400'
           }`}
@@ -163,13 +190,15 @@ const MainAppContent: React.FC = () => {
         </button>
 
         <button
-          onClick={() => setActiveTab('public')}
+          onClick={() => setMobileDrawerOpen(true)}
           className={`flex flex-col items-center gap-1 p-1 ${
-            activeTab === 'public' ? 'text-amber-400 font-semibold' : 'text-slate-400'
+            mobileDrawerOpen || ['categories', 'results', 'events', 'audit', 'users', 'exports', 'master-panel', 'public'].includes(activeTab)
+              ? 'text-amber-400 font-semibold'
+              : 'text-slate-400'
           }`}
         >
-          <Tv className="w-4 h-4" />
-          <span>Public</span>
+          <Menu className="w-4 h-4" />
+          <span>Menu</span>
         </button>
       </nav>
     </div>

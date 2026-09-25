@@ -457,3 +457,342 @@ function normalizeDate(val: unknown): string {
 
   return new Date().toISOString().split('T')[0];
 }
+
+export interface ParsedPlayerRow {
+  rowNumber: number;
+  player?: Omit<Player, 'id' | 'createdAt'>;
+  isValid: boolean;
+  error?: string;
+  warnings: string[];
+}
+
+export interface ParsedPlayersResult {
+  validPlayers: Omit<Player, 'id' | 'createdAt'>[];
+  rowDetails: ParsedPlayerRow[];
+  totalRows: number;
+  errors: string[];
+  warnings: string[];
+}
+
+/**
+ * Downloads a dedicated, beautifully formatted Player Registration Excel (.xlsx) Template
+ * with sample athlete entries and formatting instructions.
+ */
+export function downloadPlayerExcelTemplate() {
+  const wb = XLSX.utils.book_new();
+
+  // 1. Athletes Registration Sheet
+  const sampleHeaders = [
+    'Registration_Number',
+    'Full_Name',
+    'Father_Name',
+    'Date_Of_Birth',
+    'Gender',
+    'Weight_Kg',
+    'Club_School',
+    'District',
+    'State_Region',
+    'Contact_Number',
+    'Aadhar_Number',
+  ];
+
+  const sampleRows = [
+    sampleHeaders,
+    [
+      'WUS-2026-101',
+      'Aarav Sharma',
+      'Rajesh Sharma',
+      '2004-05-15',
+      'male',
+      56.5,
+      'Delhi Tigers Martial Arts Academy',
+      'Central Delhi',
+      'Delhi',
+      '+91 98123 45678',
+      '4567 8901 2345',
+    ],
+    [
+      'WUS-2026-102',
+      'Priya Verma',
+      'Sanjay Verma',
+      '2005-08-20',
+      'female',
+      52.0,
+      'Red Dragon Wushu Club',
+      'North Delhi',
+      'Delhi',
+      '+91 98234 56789',
+      '5678 9012 3456',
+    ],
+    [
+      'WUS-2026-103',
+      'Rahul Kumar',
+      'Sunil Kumar',
+      '2003-11-10',
+      'male',
+      65.0,
+      'Haryana Warriors Academy',
+      'Gurugram',
+      'Haryana',
+      '+91 98345 67890',
+      '6789 0123 4567',
+    ],
+    [
+      'WUS-2026-104',
+      'Ananya Patel',
+      'Mahesh Patel',
+      '2006-03-25',
+      'female',
+      60.0,
+      'Shaolin Kungfu Sports Club',
+      'South Delhi',
+      'Delhi',
+      '+91 98456 78901',
+      '7890 1234 5678',
+    ],
+    [
+      'WUS-2026-105',
+      'Vikram Singh',
+      'Dharmendra Singh',
+      '2002-09-12',
+      'male',
+      70.0,
+      'Punjab Wushu Training Center',
+      'Amritsar',
+      'Punjab',
+      '+91 98567 89012',
+      '8901 2345 6789',
+    ],
+  ];
+
+  const wsAthletes = XLSX.utils.aoa_to_sheet(sampleRows);
+  // Column widths for easy reading
+  wsAthletes['!cols'] = [
+    { wch: 22 }, // Registration_Number
+    { wch: 24 }, // Full_Name
+    { wch: 22 }, // Father_Name
+    { wch: 15 }, // Date_Of_Birth
+    { wch: 12 }, // Gender
+    { wch: 14 }, // Weight_Kg
+    { wch: 32 }, // Club_School
+    { wch: 18 }, // District
+    { wch: 16 }, // State_Region
+    { wch: 18 }, // Contact_Number
+    { wch: 20 }, // Aadhar_Number
+  ];
+  XLSX.utils.book_append_sheet(wb, wsAthletes, 'Player_Registration');
+
+  // 2. Instructions Sheet
+  const instructionRows = [
+    ['Field Name', 'Required / Optional', 'Format & Rules', 'Example'],
+    ['Registration_Number', 'Optional', 'Unique ID. If left blank, system generates auto-ID.', 'WUS-2026-101'],
+    ['Full_Name', 'REQUIRED', 'Full legal name of the athlete.', 'Aarav Sharma'],
+    ['Father_Name', 'Optional', 'Father or guardian name.', 'Rajesh Sharma'],
+    ['Date_Of_Birth', 'REQUIRED', 'YYYY-MM-DD or DD/MM/YYYY. Used to calculate official age.', '2004-05-15'],
+    ['Gender', 'REQUIRED', '"male" or "female" (or M / F).', 'male'],
+    ['Weight_Kg', 'REQUIRED', 'Official weighed weight in kilograms (numeric, e.g. 56.5).', '56.5'],
+    ['Club_School', 'Optional', 'Club, academy, school, or affiliated institution name.', 'Delhi Tigers Academy'],
+    ['District', 'Optional', 'District or municipal area.', 'Central Delhi'],
+    ['State_Region', 'Optional', 'State or province.', 'Delhi'],
+    ['Contact_Number', 'Optional', 'Mobile or phone number with country code.', '+91 98123 45678'],
+    ['Aadhar_Number', 'Optional', 'National identity or Aadhar number (12 digits).', '4567 8901 2345'],
+  ];
+  const wsInstructions = XLSX.utils.aoa_to_sheet(instructionRows);
+  wsInstructions['!cols'] = [{ wch: 24 }, { wch: 20 }, { wch: 55 }, { wch: 25 }];
+  XLSX.utils.book_append_sheet(wb, wsInstructions, 'Field_Instructions');
+
+  XLSX.writeFile(wb, 'Wushu_Player_Registration_Template.xlsx');
+}
+
+/**
+ * Parses any uploaded Excel (.xlsx, .xls) or CSV buffer specifically for player registration.
+ * Supports flexible column header names, handles Excel serial dates, and validates data.
+ */
+export function parsePlayerExcelFile(buffer: ArrayBuffer): ParsedPlayersResult {
+  const result: ParsedPlayersResult = {
+    validPlayers: [],
+    rowDetails: [],
+    totalRows: 0,
+    errors: [],
+    warnings: [],
+  };
+
+  try {
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+      result.errors.push('The uploaded Excel file does not contain any readable sheets.');
+      return result;
+    }
+
+    // Find the most relevant sheet:
+    // Look for sheets containing 'player', 'athlete', 'roster', 'registration', 'entry'
+    // otherwise fallback to the first sheet.
+    let selectedSheetName = workbook.SheetNames[0];
+    const preferredKeywords = ['player', 'athlete', 'roster', 'register', 'registration', 'entry', 'participant'];
+    for (const name of workbook.SheetNames) {
+      const clean = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (preferredKeywords.some(k => clean.includes(k))) {
+        selectedSheetName = name;
+        break;
+      }
+    }
+
+    const sheet = workbook.Sheets[selectedSheetName];
+    // Convert to 2D array of rows to locate header row intelligently
+    const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 });
+    if (!rawRows || rawRows.length < 2) {
+      result.errors.push(`Sheet "${selectedSheetName}" does not contain enough data rows.`);
+      return result;
+    }
+
+    // Find header row: look for row that contains 'name' or 'athlete'
+    let headerRowIdx = 0;
+    for (let i = 0; i < Math.min(rawRows.length, 5); i++) {
+      const row = rawRows[i];
+      if (Array.isArray(row)) {
+        const textJoin = row.map(c => String(c || '').toLowerCase().replace(/[^a-z0-9]/g, '')).join(' ');
+        if (textJoin.includes('name') || textJoin.includes('athlete') || textJoin.includes('player')) {
+          headerRowIdx = i;
+          break;
+        }
+      }
+    }
+
+    // Parse with determined header
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+      range: headerRowIdx,
+      defval: '',
+    });
+
+    result.totalRows = rows.length;
+
+    const usedRegs = new Set<string>();
+
+    rows.forEach((row, idx) => {
+      const rowNum = headerRowIdx + idx + 2; // Human 1-indexed row number in Excel
+      const rowWarnings: string[] = [];
+
+      const getVal = (patterns: string[]): unknown => {
+        for (const key of Object.keys(row)) {
+          const cleanKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (patterns.some(p => cleanKey.includes(p))) {
+            const val = row[key];
+            if (val !== undefined && val !== null && String(val).trim() !== '') {
+              return val;
+            }
+          }
+        }
+        return undefined;
+      };
+
+      const nameRaw = String(getVal(['fullname', 'name', 'athlete', 'playername', 'competitor', 'fighter']) || '').trim();
+
+      // Skip blank rows or template placeholder rows
+      if (!nameRaw || nameRaw.toLowerCase().includes('sample athlete') || nameRaw.toLowerCase().includes('example')) {
+        return;
+      }
+
+      // 1. Full Name
+      const name = nameRaw;
+
+      // 2. Father Name
+      const fatherName = String(getVal(['father', 'fathername', 'parent', 'guardian']) || '').trim();
+
+      // 3. DOB
+      const dobRaw = getVal(['dob', 'birth', 'dateofbirth', 'birthdate', 'born']);
+      let dob = '2005-01-01';
+      if (dobRaw) {
+        dob = normalizeDate(dobRaw);
+      } else {
+        rowWarnings.push('Date of birth missing; defaulted to 2005-01-01');
+      }
+
+      // 4. Gender
+      const genderRaw = String(getVal(['gender', 'sex', 'categorygender']) || 'male').toLowerCase().trim();
+      const gender: 'male' | 'female' =
+        genderRaw.startsWith('f') || genderRaw.includes('girl') || genderRaw.includes('women') || genderRaw === 'w'
+          ? 'female'
+          : 'male';
+
+      // 5. Weight Kg
+      const weightVal = getVal(['weight', 'weightkg', 'weighedkg', 'wt', 'kg', 'bodyweight']);
+      let weightKg = 55.0;
+      if (weightVal !== undefined && weightVal !== null) {
+        const cleanWeight = String(weightVal).replace(/[^0-9.]/g, '');
+        const parsedWeight = parseFloat(cleanWeight);
+        if (!isNaN(parsedWeight) && parsedWeight > 0) {
+          weightKg = parsedWeight;
+        } else {
+          rowWarnings.push('Invalid weight specified; defaulted to 55.0 kg');
+        }
+      } else {
+        rowWarnings.push('Weight missing; defaulted to 55.0 kg');
+      }
+
+      // 6. Club / School
+      const clubSchool = String(
+        getVal(['club', 'school', 'academy', 'institution', 'team', 'association', 'dojo', 'akhada']) || 'Unaffiliated'
+      ).trim();
+
+      // 7. District
+      const district = String(getVal(['district', 'dist', 'city', 'zone', 'town']) || 'General').trim();
+
+      // 8. State / Region
+      const stateRegion = String(getVal(['state', 'region', 'province', 'stateregion']) || '').trim();
+
+      // 9. Contact Number
+      const contactNumber = String(getVal(['contact', 'phone', 'mobile', 'tel', 'cell']) || '').trim();
+
+      // 10. Aadhar / National ID
+      const aadharNumber = String(getVal(['aadhar', 'aadhaar', 'uid', 'nationalid', 'idnumber']) || '').trim();
+
+      // 11. Registration Number (Auto-generate unique if missing)
+      let regNo = String(getVal(['registration', 'regno', 'regnumber', 'bib', 'id', 'playerid']) || '').trim();
+      if (!regNo) {
+        regNo = `WUS-${new Date().getFullYear()}-${String(1000 + idx + 1).padStart(4, '0')}`;
+        rowWarnings.push(`Generated Registration #${regNo}`);
+      }
+
+      // Avoid duplicate registration within the same import file
+      let finalRegNo = regNo;
+      let counter = 1;
+      while (usedRegs.has(finalRegNo.toLowerCase())) {
+        finalRegNo = `${regNo}-${counter++}`;
+      }
+      usedRegs.add(finalRegNo.toLowerCase());
+
+      const playerRecord: Omit<Player, 'id' | 'createdAt'> = {
+        registrationNumber: finalRegNo,
+        name,
+        fatherName,
+        dob,
+        gender,
+        weightKg,
+        clubSchool,
+        district,
+        stateRegion,
+        contactNumber,
+        aadharNumber,
+        status: 'weighed_in',
+      };
+
+      result.validPlayers.push(playerRecord);
+      result.rowDetails.push({
+        rowNumber: rowNum,
+        player: playerRecord,
+        isValid: true,
+        warnings: rowWarnings,
+      });
+    });
+
+    if (result.validPlayers.length === 0) {
+      result.errors.push('No valid player records found. Please ensure the Excel spreadsheet has valid column headers and athlete rows.');
+    }
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    result.errors.push(`Error reading Excel file: ${errorMsg}`);
+  }
+
+  return result;
+}
+
