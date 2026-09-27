@@ -214,41 +214,43 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
             </button>
           </div>
 
-          {/* Supabase Database Connection Button */}
-          <button
-            onClick={() => {
-              onClose();
-              setSupabaseModalOpen(true);
-            }}
-            className={`w-full py-2 px-3 rounded-xl border text-xs flex items-center justify-between cursor-pointer transition-colors ${
-              supabaseStatus === 'connected'
-                ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300'
-                : supabaseStatus === 'connecting'
-                ? 'bg-amber-950/30 border-amber-500/40 text-amber-300'
-                : supabaseStatus === 'error'
-                ? 'bg-rose-950/30 border-rose-500/40 text-rose-300'
-                : 'bg-slate-900 border-slate-800 text-slate-300'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <Database className="w-4 h-4 text-amber-400" />
-              <span className="font-semibold">Supabase PostgreSQL DB</span>
-            </div>
-            <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase">
-              <span>{supabaseStatus === 'connected' ? 'LIVE' : supabaseStatus === 'connecting' ? 'SYNC' : supabaseStatus === 'error' ? 'ERR' : 'SETUP'}</span>
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  supabaseStatus === 'connected'
-                    ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]'
-                    : supabaseStatus === 'connecting'
-                    ? 'bg-amber-400 animate-ping'
-                    : supabaseStatus === 'error'
-                    ? 'bg-rose-500'
-                    : 'bg-slate-500'
-                }`}
-              />
-            </div>
-          </button>
+          {/* Supabase Database Connection Button - Restricted exclusively to Super Admin */}
+          {role === 'super_admin' && (
+            <button
+              onClick={() => {
+                onClose();
+                setSupabaseModalOpen(true);
+              }}
+              className={`w-full py-2 px-3 rounded-xl border text-xs flex items-center justify-between cursor-pointer transition-colors ${
+                supabaseStatus === 'connected'
+                  ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300'
+                  : supabaseStatus === 'connecting'
+                  ? 'bg-amber-950/30 border-amber-500/40 text-amber-300'
+                  : supabaseStatus === 'error'
+                  ? 'bg-rose-950/30 border-rose-500/40 text-rose-300'
+                  : 'bg-slate-900 border-slate-800 text-slate-300'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Database className="w-4 h-4 text-amber-400" />
+                <span className="font-semibold">Supabase PostgreSQL DB</span>
+              </div>
+              <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase">
+                <span>{supabaseStatus === 'connected' ? 'LIVE' : supabaseStatus === 'connecting' ? 'SYNC' : supabaseStatus === 'error' ? 'ERR' : 'SETUP'}</span>
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    supabaseStatus === 'connected'
+                      ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]'
+                      : supabaseStatus === 'connecting'
+                      ? 'bg-amber-400 animate-ping'
+                      : supabaseStatus === 'error'
+                      ? 'bg-rose-500'
+                      : 'bg-slate-500'
+                  }`}
+                />
+              </div>
+            </button>
+          )}
 
           {/* User state / Sign in */}
           {!isLoggedIn ? (

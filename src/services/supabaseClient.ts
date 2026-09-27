@@ -167,43 +167,56 @@ export async function testSupabaseConnection(): Promise<{
 export function mapEventToRow(e: EventSetup) {
   return {
     id: e.id,
-    name: e.name,
-    organizer: e.organizer,
-    venue: e.venue,
-    city: e.city,
+    name: e.name || 'Wushu Championship',
+    organizer: e.organizer || 'State Wushu Association',
+    venue: e.venue || '',
+    city: e.city || '',
     state: e.state || null,
-    start_date: e.startDate,
-    end_date: e.endDate,
-    tournament_reference_date: e.tournamentReferenceDate,
-    status: e.status,
+    start_date: e.startDate || new Date().toISOString().split('T')[0],
+    end_date: e.endDate || new Date().toISOString().split('T')[0],
+    tournament_reference_date: e.tournamentReferenceDate || e.startDate || new Date().toISOString().split('T')[0],
+    status: e.status || 'upcoming',
     is_live: e.isLive !== false,
-    competition_type: e.competitionType,
-    round_duration_sec: e.roundDurationSec,
-    rounds_count: e.roundsCount,
-    rest_duration_sec: e.restDurationSec,
-    rings: e.rings,
+    competition_type: e.competitionType || 'Sanda',
+    round_duration_sec: Number(e.roundDurationSec) || 120,
+    rounds_count: Number(e.roundsCount) || 3,
+    rest_duration_sec: Number(e.restDurationSec) || 60,
+    rings: Array.isArray(e.rings) ? e.rings : ['Leitai 1 (Platform A)', 'Leitai 2 (Platform B)'],
     description: e.description || null,
   };
 }
 
 export function mapRowToEvent(r: any): EventSetup {
+  let parsedRings = ['Leitai 1 (Platform A)', 'Leitai 2 (Platform B)'];
+  if (r.rings) {
+    if (typeof r.rings === 'string') {
+      try {
+        parsedRings = JSON.parse(r.rings);
+      } catch {
+        // fallback
+      }
+    } else if (Array.isArray(r.rings)) {
+      parsedRings = r.rings;
+    }
+  }
+
   return {
     id: r.id,
-    name: r.name,
+    name: r.name || 'Wushu Championship',
     organizer: r.organizer || 'State Wushu Association',
     venue: r.venue || '',
     city: r.city || '',
     state: r.state || '',
-    startDate: r.start_date,
-    endDate: r.end_date,
-    tournamentReferenceDate: r.tournament_reference_date || r.start_date,
+    startDate: r.start_date || new Date().toISOString().split('T')[0],
+    endDate: r.end_date || new Date().toISOString().split('T')[0],
+    tournamentReferenceDate: r.tournament_reference_date || r.start_date || new Date().toISOString().split('T')[0],
     status: r.status || 'upcoming',
     isLive: r.is_live !== false,
     competitionType: r.competition_type || 'Sanda',
     roundDurationSec: Number(r.round_duration_sec) || 120,
     roundsCount: Number(r.rounds_count) || 3,
     restDurationSec: Number(r.rest_duration_sec) || 60,
-    rings: r.rings || ['Leitai 1 (Platform A)', 'Leitai 2 (Platform B)'],
+    rings: Array.isArray(parsedRings) ? parsedRings : ['Leitai 1 (Platform A)', 'Leitai 2 (Platform B)'],
     description: r.description || '',
   };
 }
@@ -212,19 +225,19 @@ export function mapPlayerToRow(p: Player) {
   return {
     id: p.id,
     event_id: p.eventId || null,
-    registration_number: p.registrationNumber,
-    name: p.name,
-    father_name: p.fatherName,
-    dob: p.dob,
-    gender: p.gender,
-    weight_kg: p.weightKg,
-    club_school: p.clubSchool,
-    district: p.district,
-    state_region: p.stateRegion,
-    contact_number: p.contactNumber,
-    aadhar_number: p.aadharNumber,
-    status: p.status,
-    created_at: p.createdAt,
+    registration_number: p.registrationNumber || p.id,
+    name: p.name || '',
+    father_name: p.fatherName || null,
+    dob: p.dob || null,
+    gender: p.gender || 'Male',
+    weight_kg: Number(p.weightKg) || 0,
+    club_school: p.clubSchool || null,
+    district: p.district || null,
+    state_region: p.stateRegion || null,
+    contact_number: p.contactNumber || null,
+    aadhar_number: p.aadharNumber || null,
+    status: p.status || 'weighed_in',
+    created_at: p.createdAt || new Date().toISOString(),
   };
 }
 
@@ -233,10 +246,10 @@ export function mapRowToPlayer(r: any): Player {
     id: r.id,
     eventId: r.event_id || undefined,
     registrationNumber: r.registration_number || r.id,
-    name: r.name,
+    name: r.name || '',
     fatherName: r.father_name || '',
     dob: r.dob || '',
-    gender: r.gender,
+    gender: r.gender || 'Male',
     weightKg: Number(r.weight_kg) || 0,
     clubSchool: r.club_school || '',
     district: r.district || '',
@@ -251,24 +264,37 @@ export function mapRowToPlayer(r: any): Player {
 export function mapCategoryToRow(c: Category) {
   return {
     id: c.id,
-    event_id: c.eventId,
+    event_id: c.eventId || null,
     name: c.name,
     gender: c.gender,
-    age_category_id: c.ageCategoryId,
-    weight_category_id: c.weightCategoryId,
+    age_category_id: c.ageCategoryId || null,
+    weight_category_id: c.weightCategoryId || null,
     district_filter: c.districtFilter || null,
     club_filter: c.clubFilter || null,
-    is_locked: c.isLocked,
+    is_locked: Boolean(c.isLocked),
     confirmed_at: c.confirmedAt || null,
     confirmed_by: c.confirmedBy || null,
-    eligible_player_ids: c.eligiblePlayerIds,
+    eligible_player_ids: Array.isArray(c.eligiblePlayerIds) ? c.eligiblePlayerIds : [],
   };
 }
 
 export function mapRowToCategory(r: any): Category {
+  let parsedEligible: string[] = [];
+  if (r.eligible_player_ids) {
+    if (typeof r.eligible_player_ids === 'string') {
+      try {
+        parsedEligible = JSON.parse(r.eligible_player_ids);
+      } catch {
+        parsedEligible = [];
+      }
+    } else if (Array.isArray(r.eligible_player_ids)) {
+      parsedEligible = r.eligible_player_ids;
+    }
+  }
+
   return {
     id: r.id,
-    eventId: r.event_id,
+    eventId: r.event_id || undefined,
     name: r.name,
     gender: r.gender,
     ageCategoryId: r.age_category_id,
@@ -278,7 +304,7 @@ export function mapRowToCategory(r: any): Category {
     isLocked: Boolean(r.is_locked),
     confirmedAt: r.confirmed_at || undefined,
     confirmedBy: r.confirmed_by || undefined,
-    eligiblePlayerIds: r.eligible_player_ids || [],
+    eligiblePlayerIds: Array.isArray(parsedEligible) ? parsedEligible : [],
   };
 }
 
@@ -286,19 +312,32 @@ export function mapBracketToRow(b: Bracket) {
   return {
     id: b.id,
     category_id: b.categoryId,
-    event_id: b.eventId,
-    rounds: b.rounds,
-    generated_at: b.generatedAt,
-    is_locked: b.isLocked,
+    event_id: b.eventId || null,
+    rounds: Array.isArray(b.rounds) ? b.rounds : [],
+    generated_at: b.generatedAt || new Date().toISOString(),
+    is_locked: Boolean(b.isLocked),
   };
 }
 
 export function mapRowToBracket(r: any): Bracket {
+  let parsedRounds = [];
+  if (r.rounds) {
+    if (typeof r.rounds === 'string') {
+      try {
+        parsedRounds = JSON.parse(r.rounds);
+      } catch {
+        parsedRounds = [];
+      }
+    } else if (Array.isArray(r.rounds)) {
+      parsedRounds = r.rounds;
+    }
+  }
+
   return {
     id: r.id,
     categoryId: r.category_id,
-    eventId: r.event_id,
-    rounds: r.rounds || [],
+    eventId: r.event_id || undefined,
+    rounds: Array.isArray(parsedRounds) ? parsedRounds : [],
     generatedAt: r.generated_at || new Date().toISOString(),
     isLocked: Boolean(r.is_locked),
   };
@@ -314,7 +353,7 @@ export function mapUserToRow(u: User) {
     ring_assignment: u.ringAssignment || null,
     assigned_ring: u.assignedRing || null,
     password: u.password || null,
-    last_active: u.lastActive || null,
+    last_active: u.lastActive || 'Online',
   };
 }
 
@@ -328,7 +367,7 @@ export function mapRowToUser(r: any): User {
     ringAssignment: r.ring_assignment || undefined,
     assignedRing: r.assigned_ring || undefined,
     password: r.password,
-    lastActive: r.last_active,
+    lastActive: r.last_active || 'Online',
   };
 }
 
@@ -336,8 +375,8 @@ export function mapAgeCategoryToRow(a: AgeCategory) {
   return {
     id: a.id,
     name: a.name,
-    min_age: a.minAge,
-    max_age: a.maxAge,
+    min_age: Number(a.minAge) || 0,
+    max_age: Number(a.maxAge) || 99,
     description: a.description || null,
   };
 }
@@ -356,9 +395,9 @@ export function mapWeightCategoryToRow(w: WeightCategory) {
   return {
     id: w.id,
     name: w.name,
-    min_weight_kg: w.minWeightKg,
-    max_weight_kg: w.maxWeightKg,
-    gender: w.gender,
+    min_weight_kg: Number(w.minWeightKg) || 0,
+    max_weight_kg: Number(w.maxWeightKg) || 999,
+    gender: w.gender || 'Male',
   };
 }
 
@@ -368,19 +407,19 @@ export function mapRowToWeightCategory(r: any): WeightCategory {
     name: r.name,
     minWeightKg: Number(r.min_weight_kg),
     maxWeightKg: Number(r.max_weight_kg),
-    gender: r.gender,
+    gender: r.gender || 'Male',
   };
 }
 
 export function mapAuditLogToRow(a: AuditLog) {
   return {
     id: a.id,
-    timestamp: a.timestamp,
-    user_role: a.userRole,
-    user_name: a.userName,
+    timestamp: a.timestamp || new Date().toISOString(),
+    user_role: a.userRole || 'official',
+    user_name: a.userName || 'Official',
     action: a.action,
-    target: a.target,
-    details: a.details,
+    target: a.target || '',
+    details: a.details || '',
     entity_type: a.entityType || null,
   };
 }
@@ -403,14 +442,30 @@ export function mapRowToAuditLog(r: any): AuditLog {
 // ---------------------------------------------------------------------------
 
 // --- PLAYERS ---
-export async function supabaseUpsertPlayer(player: Player): Promise<void> {
+export async function supabaseUpsertPlayer(player: Player): Promise<{ success: boolean; error?: string }> {
   const client = getSupabaseClient();
-  if (!client) return;
+  if (!client) return { success: false, error: 'Supabase client not initialized' };
   try {
     const row = mapPlayerToRow(player);
-    await client.from('players').upsert([row]);
-  } catch (err) {
+    const { error } = await client.from('players').upsert([row]);
+    if (error) {
+      if (error.message.includes('event_id') || error.code === '42703' || error.message.includes('column')) {
+        const fallbackRow = { ...row };
+        delete (fallbackRow as any).event_id;
+        const res2 = await client.from('players').upsert([fallbackRow]);
+        if (res2.error) {
+          console.error('Fallback player upsert failed:', res2.error.message);
+          return { success: false, error: res2.error.message };
+        }
+        return { success: true };
+      }
+      console.error('Supabase upsert player failed:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
     console.error('Failed to upsert player in Supabase:', err);
+    return { success: false, error: err?.message || String(err) };
   }
 }
 
@@ -429,7 +484,20 @@ export async function supabaseBulkUpsertPlayers(players: Player[]): Promise<void
   if (!client || players.length === 0) return;
   try {
     const rows = players.map(mapPlayerToRow);
-    await client.from('players').upsert(rows);
+    const { error } = await client.from('players').upsert(rows);
+    if (error) {
+      if (error.message.includes('event_id') || error.code === '42703' || error.message.includes('column')) {
+        const fallbackRows = rows.map(r => {
+          const copy = { ...r };
+          delete (copy as any).event_id;
+          return copy;
+        });
+        const res2 = await client.from('players').upsert(fallbackRows);
+        if (res2.error) {
+          console.error('Fallback bulk player upsert failed:', res2.error.message);
+        }
+      }
+    }
   } catch (err) {
     console.error('Failed to bulk upsert players in Supabase:', err);
   }
@@ -446,14 +514,26 @@ export async function supabaseClearPlayers(): Promise<void> {
 }
 
 // --- CATEGORIES ---
-export async function supabaseUpsertCategory(category: Category): Promise<void> {
+export async function supabaseUpsertCategory(category: Category): Promise<{ success: boolean; error?: string }> {
   const client = getSupabaseClient();
-  if (!client) return;
+  if (!client) return { success: false, error: 'Supabase client not initialized' };
   try {
     const row = mapCategoryToRow(category);
-    await client.from('categories').upsert([row]);
-  } catch (err) {
+    const { error } = await client.from('categories').upsert([row]);
+    if (error) {
+      if (error.message.includes('event_id') || error.code === '42703' || error.message.includes('column')) {
+        const fallbackRow = { ...row };
+        delete (fallbackRow as any).event_id;
+        const res2 = await client.from('categories').upsert([fallbackRow]);
+        if (res2.error) return { success: false, error: res2.error.message };
+        return { success: true };
+      }
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
     console.error('Failed to upsert category in Supabase:', err);
+    return { success: false, error: err?.message || String(err) };
   }
 }
 
@@ -478,14 +558,47 @@ export async function supabaseClearCategories(): Promise<void> {
 }
 
 // --- BRACKETS ---
-export async function supabaseUpsertBracket(bracket: Bracket): Promise<void> {
+export async function supabaseUpsertBracket(bracket: Bracket): Promise<{ success: boolean; error?: string }> {
   const client = getSupabaseClient();
-  if (!client) return;
+  if (!client) return { success: false, error: 'Supabase client not initialized' };
   try {
     const row = mapBracketToRow(bracket);
-    await client.from('brackets').upsert([row]);
-  } catch (err) {
+    const { error } = await client.from('brackets').upsert([row]);
+    if (error) {
+      if (error.message.includes('event_id') || error.code === '42703' || error.message.includes('column')) {
+        const fallbackRow = { ...row };
+        delete (fallbackRow as any).event_id;
+        const res2 = await client.from('brackets').upsert([fallbackRow]);
+        if (res2.error) return { success: false, error: res2.error.message };
+        return { success: true };
+      }
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
     console.error('Failed to upsert bracket in Supabase:', err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+export async function supabaseBulkUpsertBrackets(brackets: Bracket[]): Promise<void> {
+  const client = getSupabaseClient();
+  if (!client || brackets.length === 0) return;
+  try {
+    const rows = brackets.map(mapBracketToRow);
+    const { error } = await client.from('brackets').upsert(rows);
+    if (error) {
+      if (error.message.includes('event_id') || error.code === '42703' || error.message.includes('column')) {
+        const fallbackRows = rows.map(r => {
+          const copy = { ...r };
+          delete (copy as any).event_id;
+          return copy;
+        });
+        await client.from('brackets').upsert(fallbackRows);
+      }
+    }
+  } catch (err) {
+    console.error('Failed to bulk upsert brackets in Supabase:', err);
   }
 }
 
@@ -510,14 +623,20 @@ export async function supabaseClearBrackets(): Promise<void> {
 }
 
 // --- EVENTS ---
-export async function supabaseUpsertEvent(event: EventSetup): Promise<void> {
+export async function supabaseUpsertEvent(event: EventSetup): Promise<{ success: boolean; error?: string }> {
   const client = getSupabaseClient();
-  if (!client) return;
+  if (!client) return { success: false, error: 'Supabase client not initialized' };
   try {
     const row = mapEventToRow(event);
-    await client.from('events').upsert([row]);
-  } catch (err) {
+    const { error } = await client.from('events').upsert([row]);
+    if (error) {
+      console.error('Failed to upsert event in Supabase:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
     console.error('Failed to upsert event in Supabase:', err);
+    return { success: false, error: err?.message || String(err) };
   }
 }
 
@@ -625,7 +744,14 @@ export async function supabaseInsertAuditLog(log: AuditLog): Promise<void> {
   if (!client) return;
   try {
     const row = mapAuditLogToRow(log);
-    await client.from('audit_logs').upsert([row]);
+    const { error } = await client.from('audit_logs').upsert([row]);
+    if (error) {
+      if (error.message.includes('entity_type') || error.code === '42703' || error.message.includes('column')) {
+        const fallbackRow = { ...row };
+        delete (fallbackRow as any).entity_type;
+        await client.from('audit_logs').upsert([fallbackRow]);
+      }
+    }
   } catch (err) {
     console.error('Failed to insert audit log in Supabase:', err);
   }
@@ -679,7 +805,19 @@ export async function pushAllDataToSupabase(payload: {
     if (payload.players && payload.players.length > 0) {
       const playerRows = payload.players.map(mapPlayerToRow);
       const { error: pErr } = await client.from('players').upsert(playerRows);
-      if (pErr) throw new Error(`Players sync error: ${pErr.message}`);
+      if (pErr) {
+        if (pErr.message.includes('event_id') || pErr.code === '42703' || pErr.message.includes('column')) {
+          const fallbackRows = playerRows.map(r => {
+            const copy = { ...r };
+            delete (copy as any).event_id;
+            return copy;
+          });
+          const { error: fErr } = await client.from('players').upsert(fallbackRows);
+          if (fErr) throw new Error(`Players sync error: ${fErr.message}`);
+        } else {
+          throw new Error(`Players sync error: ${pErr.message}`);
+        }
+      }
     }
 
     // 5. Categories
@@ -824,8 +962,9 @@ export function subscribeToSupabaseTournament(
   if (!client) return null;
 
   try {
+    const channelName = `tournament-live-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const channel: RealtimeChannel = client
-      .channel('tournament-live-sync')
+      .channel(channelName)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'brackets' },
@@ -861,10 +1000,23 @@ export function subscribeToSupabaseTournament(
         { event: '*', schema: 'public', table: 'age_categories' },
         payload => onTableChange('age_categories', payload.eventType, payload.new, payload.old)
       )
-      .subscribe();
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'audit_logs' },
+        payload => onTableChange('audit_logs', payload.eventType, payload.new, payload.old)
+      )
+      .subscribe((status, err) => {
+        if (err) {
+          console.warn('Supabase Realtime status notice:', status, err);
+        }
+      });
 
     return () => {
-      client.removeChannel(channel);
+      try {
+        client.removeChannel(channel);
+      } catch (e) {
+        // Safe channel disposal
+      }
     };
   } catch (err) {
     console.error('Failed to subscribe to Supabase Realtime channel:', err);

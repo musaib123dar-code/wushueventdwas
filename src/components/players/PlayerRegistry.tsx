@@ -93,9 +93,8 @@ export const PlayerRegistry: React.FC = () => {
   }, [players, searchQuery, selectedGender, selectedDistrict]);
 
   const openAddModal = () => {
-    const nextRegNo = `WUS-${new Date().getFullYear()}-${String(players.length + 101).padStart(4, '0')}`;
     setFormData({
-      registrationNumber: nextRegNo,
+      registrationNumber: '',
       name: '',
       fatherName: '',
       dob: '2004-06-20',
@@ -139,7 +138,7 @@ export const PlayerRegistry: React.FC = () => {
       setFormError('Player full name is required.');
       return;
     }
-    if (!formData.registrationNumber.trim()) {
+    if (editingPlayer && !formData.registrationNumber.trim()) {
       setFormError('Registration / Player ID is required.');
       return;
     }
@@ -491,19 +490,20 @@ export const PlayerRegistry: React.FC = () => {
 
             <form onSubmit={handleSubmit} className="space-y-4 text-xs">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Reg Number */}
-                <div>
-                  <label className="block text-slate-400 mb-1 font-medium">
-                    Player ID / Reg Number *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.registrationNumber}
-                    onChange={e => setFormData({ ...formData, registrationNumber: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-amber-500 font-mono-tabular"
-                  />
-                </div>
+                {/* Reg Number - Only displayed when editing existing record */}
+                {editingPlayer && (
+                  <div className="md:col-span-2">
+                    <label className="block text-slate-400 mb-1 font-medium">
+                      Player ID / Reg Number
+                    </label>
+                    <input
+                      type="text"
+                      disabled
+                      value={formData.registrationNumber}
+                      className="w-full bg-slate-950/60 border border-slate-800 rounded-lg px-3 py-2 text-slate-400 font-mono-tabular cursor-not-allowed"
+                    />
+                  </div>
+                )}
 
                 {/* Player Name */}
                 <div>

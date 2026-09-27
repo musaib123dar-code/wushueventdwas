@@ -44,6 +44,7 @@ import {
   mapRowToUser,
   mapRowToAgeCategory,
   mapRowToWeightCategory,
+  mapRowToAuditLog,
   supabaseUpsertPlayer,
   supabaseDeletePlayer,
   supabaseBulkUpsertPlayers,
@@ -413,12 +414,16 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       .then(res => {
         if (res.success) {
           setSupabaseStatus('connected');
-          // Auto pull any remote records upon connecting
+          // Auto pull any remote records upon connecting with non-destructive smart merge
           pullAllDataFromSupabase().then(pullRes => {
             if (pullRes.success && pullRes.data) {
               if (pullRes.data.events && pullRes.data.events.length > 0) {
                 setEvents(pullRes.data.events);
-                setEvent(pullRes.data.events[0]);
+                // Preserve current event workspace selection! Never force reset to events[0]
+                setEvent(current => {
+                  const matched = pullRes.data!.events!.find(e => e.id === current.id);
+                  return matched ? { ...matched, isLive: matched.isLive !== false } : current;
+                });
               }
               if (pullRes.data.ageCategories && pullRes.data.ageCategories.length > 0) {
                 setAgeCategoriesState(pullRes.data.ageCategories);
@@ -426,26 +431,71 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               if (pullRes.data.weightCategories && pullRes.data.weightCategories.length > 0) {
                 setWeightCategoriesState(pullRes.data.weightCategories);
               }
+
+              // SMART NON-DESTRUCTIVE MERGE FOR ATHLETES
               if (pullRes.data.players && pullRes.data.players.length > 0) {
-                setAllPlayers(pullRes.data.players);
+                const remotePlayers = pullRes.data.players;
+                setAllPlayers(currentLocal => {
+                  const map = new Map<string, Player>();
+                  // 1. Seed with local athletes first
+                  currentLocal.forEach(p => map.set(p.id, p));
+
+                  // 2. Merge remote athletes (preserving local eventId if remote event_id is null/missing)
+                  remotePlayers.forEach(r => {
+                    const localMatch = map.get(r.id);
+                    if (localMatch) {
+                      map.set(r.id, {
+                        ...localMatch,
+                        ...r,
+                        eventId: r.eventId || localMatch.eventId,
+                      });
+                    } else {
+                      map.set(r.id, r);
+                    }
+                  });
+
+                  // 3. Keep all locally registered athletes!
+                  const notOnRemote = currentLocal.filter(lp => !remotePlayers.some(rp => rp.id === lp.id));
+                  if (notOnRemote.length > 0) {
+                    supabaseBulkUpsertPlayers(notOnRemote);
+                  }
+
+                  const mergedList = Array.from(map.values());
+                  try {
+                    localStorage.setItem(`${STORAGE_KEY}_players`, JSON.stringify(mergedList));
+                  } catch {
+                    // Safe fallback
+                  }
+                  return mergedList;
+                });
               } else if (allPlayers.length > 0) {
-                // If Supabase has no players yet, seed initial tournament roster to Supabase
-                pushAllDataToSupabase({
-                  events,
-                  players: allPlayers,
-                  categories: allCategories,
-                  brackets: allBrackets,
-                  users,
-                  auditLogs,
-                  ageCategories,
-                  weightCategories,
+                // If Supabase has no players yet, seed all local players to remote
+                supabaseBulkUpsertPlayers(allPlayers);
+              }
+
+              if (pullRes.data.categories && pullRes.data.categories.length > 0) {
+                const remoteCats = pullRes.data.categories;
+                setAllCategories(currentLocal => {
+                  const map = new Map<string, Category>();
+                  currentLocal.forEach(c => map.set(c.id, c));
+                  remoteCats.forEach(r => {
+                    const localMatch = map.get(r.id);
+                    map.set(r.id, localMatch ? { ...localMatch, ...r, eventId: r.eventId || localMatch.eventId } : r);
+                  });
+                  return Array.from(map.values());
                 });
               }
-              if (pullRes.data.categories && pullRes.data.categories.length > 0) {
-                setAllCategories(pullRes.data.categories);
-              }
               if (pullRes.data.brackets && pullRes.data.brackets.length > 0) {
-                setAllBrackets(pullRes.data.brackets);
+                const remoteBrackets = pullRes.data.brackets;
+                setAllBrackets(currentLocal => {
+                  const map = new Map<string, Bracket>();
+                  currentLocal.forEach(b => map.set(b.id, b));
+                  remoteBrackets.forEach(r => {
+                    const localMatch = map.get(r.id);
+                    map.set(r.id, localMatch ? { ...localMatch, ...r, eventId: r.eventId || localMatch.eventId } : r);
+                  });
+                  return Array.from(map.values());
+                });
               }
               if (pullRes.data.users && pullRes.data.users.length > 0) {
                 setUsers(pullRes.data.users);
@@ -483,6 +533,8 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           setAgeCategoriesState(prev => prev.filter(a => a.id !== targetId));
         } else if (table === 'weight_categories') {
           setWeightCategoriesState(prev => prev.filter(w => w.id !== targetId));
+        } else if (table === 'audit_logs') {
+          setAuditLogs(prev => prev.filter(a => a.id !== targetId));
         }
         return;
       }
@@ -496,6 +548,11 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           if (idx >= 0) return prev.map(item => (item.id === b.id ? b : item));
           return [...prev, b];
         });
+        setActiveBoutForScoring(current => {
+          if (!current) return current;
+          const found = findBoutInRounds(b.rounds, current.id);
+          return found || current;
+        });
       } else if (table === 'events') {
         const e = mapRowToEvent(newRecord);
         setEvents(prev => {
@@ -508,8 +565,16 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         const p = mapRowToPlayer(newRecord);
         setAllPlayers(prev => {
           const idx = prev.findIndex(item => item.id === p.id);
-          if (idx >= 0) return prev.map(item => (item.id === p.id ? p : item));
-          return [p, ...prev];
+          if (idx >= 0) {
+            const existing = prev[idx];
+            const merged: Player = {
+              ...existing,
+              ...p,
+              eventId: p.eventId || existing.eventId,
+            };
+            return prev.map(item => (item.id === p.id ? merged : item));
+          }
+          return [{ ...p, eventId: p.eventId || event.id }, ...prev];
         });
       } else if (table === 'categories') {
         const c = mapRowToCategory(newRecord);
@@ -538,6 +603,13 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           const idx = prev.findIndex(item => item.id === w.id);
           if (idx >= 0) return prev.map(item => (item.id === w.id ? w : item));
           return [...prev, w];
+        });
+      } else if (table === 'audit_logs') {
+        const a = mapRowToAuditLog(newRecord);
+        setAuditLogs(prev => {
+          const idx = prev.findIndex(item => item.id === a.id);
+          if (idx >= 0) return prev.map(item => (item.id === a.id ? a : item));
+          return [a, ...prev.slice(0, 199)];
         });
       }
     });
@@ -586,7 +658,26 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         const matched = res.data.events.find(e => e.id === currentId) || res.data.events[0];
         setEvent(matched);
       }
-      if (res.data.players) setAllPlayers(res.data.players);
+      if (res.data.players) {
+        const remotePlayers = res.data.players;
+        setAllPlayers(currentLocal => {
+          const map = new Map<string, Player>();
+          currentLocal.forEach(p => map.set(p.id, p));
+          remotePlayers.forEach(r => {
+            const localMatch = map.get(r.id);
+            if (localMatch) {
+              map.set(r.id, {
+                ...localMatch,
+                ...r,
+                eventId: r.eventId || localMatch.eventId,
+              });
+            } else {
+              map.set(r.id, r);
+            }
+          });
+          return Array.from(map.values());
+        });
+      }
       if (res.data.categories) setAllCategories(res.data.categories);
       if (res.data.brackets) setAllBrackets(res.data.brackets);
       if (res.data.users) setUsers(res.data.users);
@@ -969,25 +1060,84 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       return { success: false, error: 'General view cannot add players.' };
     }
 
-    // Check duplicate registration or duplicate aadhar within this championship event
-    const existing = players.find(
-      p => p.registrationNumber.toLowerCase() === playerData.registrationNumber.toLowerCase() ||
-           (p.aadharNumber && p.aadharNumber === playerData.aadharNumber)
+    // Check duplicate aadhar within this championship event (if provided)
+    if (playerData.aadharNumber && playerData.aadharNumber.trim()) {
+      const cleanAadhar = playerData.aadharNumber.trim().toLowerCase();
+      const aadharExists = players.some(
+        p => p.aadharNumber && p.aadharNumber.trim().toLowerCase() === cleanAadhar
+      );
+      if (aadharExists) {
+        return { success: false, error: 'An athlete with this Aadhar number is already registered in this championship.' };
+      }
+    }
+
+    // Dynamic collision-free generation of Registration Number AT SAVE TIME
+    const year = new Date().getFullYear();
+    const existingRegSet = new Set(
+      allPlayers.map(p => (p.registrationNumber || '').trim().toLowerCase())
     );
-    if (existing) {
-      return { success: false, error: 'Player with this Registration ID or Aadhar number already exists in this championship.' };
+
+    let finalRegNumber = (playerData.registrationNumber || '').trim();
+    const isAuto =
+      !finalRegNumber ||
+      finalRegNumber.toUpperCase() === 'AUTO' ||
+      finalRegNumber.toLowerCase().includes('auto') ||
+      finalRegNumber.startsWith('WUS-TEMP');
+
+    if (isAuto) {
+      // Find highest existing sequence in WUS-{year}-{sequence}
+      let maxSeq = 100;
+      allPlayers.forEach(p => {
+        const reg = (p.registrationNumber || '').trim();
+        const m = reg.match(/WUS-\d{4}-(\d+)/i);
+        if (m && m[1]) {
+          const val = parseInt(m[1], 10);
+          if (!isNaN(val) && val > maxSeq) {
+            maxSeq = val;
+          }
+        }
+      });
+
+      let nextSeq = maxSeq + 1;
+      let candidate = `WUS-${year}-${String(nextSeq).padStart(4, '0')}`;
+      while (existingRegSet.has(candidate.toLowerCase())) {
+        nextSeq++;
+        candidate = `WUS-${year}-${String(nextSeq).padStart(4, '0')}`;
+      }
+      finalRegNumber = candidate;
+    } else {
+      // Manual custom ID provided: verify not already taken
+      if (existingRegSet.has(finalRegNumber.toLowerCase())) {
+        return {
+          success: false,
+          error: `Player Registration ID "${finalRegNumber}" is already in use by another athlete. Please choose Auto-Generate or enter another ID.`,
+        };
+      }
     }
 
     const newPlayer: Player = {
       ...playerData,
-      id: `p-${Date.now()}`,
-      eventId: event.id,
+      registrationNumber: finalRegNumber,
+      id: `p-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      eventId: event?.id || INITIAL_EVENT.id,
       createdAt: new Date().toISOString(),
     };
 
-    setAllPlayers(prev => [newPlayer, ...prev]);
+    setAllPlayers(prev => {
+      const next = [newPlayer, ...prev];
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_players`, JSON.stringify(next));
+      } catch (err) {
+        console.warn('localStorage player write failed:', err);
+      }
+      return next;
+    });
     supabaseUpsertPlayer(newPlayer);
-    addAuditLog('CREATE', `Player: ${newPlayer.name}`, `Reg #${newPlayer.registrationNumber}, Club: ${newPlayer.clubSchool}, Weight: ${newPlayer.weightKg}kg in event ${event.name}`);
+    addAuditLog(
+      'CREATE',
+      `Player: ${newPlayer.name}`,
+      `Assigned Reg #${newPlayer.registrationNumber}, Club: ${newPlayer.clubSchool}, Weight: ${newPlayer.weightKg}kg in event ${event.name}`
+    );
     return { success: true, player: newPlayer };
   };
 
@@ -999,7 +1149,15 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (!target) return { success: false, error: 'Player not found.' };
 
     const updatedPlayer = { ...target, ...playerData, eventId: target.eventId || event.id };
-    setAllPlayers(prev => prev.map(p => (p.id === id ? updatedPlayer : p)));
+    setAllPlayers(prev => {
+      const next = prev.map(p => (p.id === id ? updatedPlayer : p));
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_players`, JSON.stringify(next));
+      } catch (err) {
+        console.warn('localStorage player write failed:', err);
+      }
+      return next;
+    });
     supabaseUpsertPlayer(updatedPlayer);
     addAuditLog('UPDATE', `Player: ${target.name}`, `Updated details: ${Object.keys(playerData).join(', ')}`);
     return { success: true };
@@ -1032,28 +1190,53 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     let duplicates = 0;
 
     const existingRegs = new Set(
-      replace ? [] : players.map(p => p.registrationNumber.trim().toLowerCase())
+      replace ? [] : allPlayers.map(p => p.registrationNumber.trim().toLowerCase())
     );
     const existingAadhars = new Set(
-      replace ? [] : players.filter(p => p.aadharNumber).map(p => p.aadharNumber.trim().toLowerCase())
+      replace ? [] : allPlayers.filter(p => p.aadharNumber).map(p => p.aadharNumber.trim().toLowerCase())
     );
+
+    const year = new Date().getFullYear();
+    let maxSeq = 100;
+    allPlayers.forEach(p => {
+      const r = (p.registrationNumber || '').trim();
+      const m = r.match(/WUS-\d{4}-(\d+)/i);
+      if (m && m[1]) {
+        const val = parseInt(m[1], 10);
+        if (!isNaN(val) && val > maxSeq) {
+          maxSeq = val;
+        }
+      }
+    });
 
     const validNewPlayers: Player[] = [];
 
     playersData.forEach((p, idx) => {
-      const reg = (p.registrationNumber || `WUS-${Date.now()}-${idx + 1}`).trim().toLowerCase();
+      let reg = (p.registrationNumber || '').trim();
       const aadhar = (p.aadharNumber || '').trim().toLowerCase();
 
-      if (existingRegs.has(reg) || (aadhar && existingAadhars.has(aadhar))) {
+      // If reg is missing or already taken, auto-generate sequential unique reg
+      if (!reg || existingRegs.has(reg.toLowerCase())) {
+        maxSeq++;
+        let candidate = `WUS-${year}-${String(maxSeq).padStart(4, '0')}`;
+        while (existingRegs.has(candidate.toLowerCase())) {
+          maxSeq++;
+          candidate = `WUS-${year}-${String(maxSeq).padStart(4, '0')}`;
+        }
+        reg = candidate;
+      }
+
+      if (aadhar && existingAadhars.has(aadhar)) {
         duplicates++;
         return;
       }
 
-      existingRegs.add(reg);
+      existingRegs.add(reg.toLowerCase());
       if (aadhar) existingAadhars.add(aadhar);
 
       validNewPlayers.push({
         ...p,
+        registrationNumber: reg,
         id: `p-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
         eventId: event.id,
         createdAt: new Date().toISOString(),
@@ -1271,16 +1454,17 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       timestamp: Date.now(),
     };
 
-    setAllBrackets(prev =>
-      prev.map(b => ({
-        ...b,
-        rounds: b.rounds.map(round => ({
+    setAllBrackets(prev => {
+      const next = prev.map(b => {
+        let bracketChanged = false;
+        const updatedRounds = b.rounds.map(round => ({
           ...round,
           bouts: round.bouts.map(bout => {
             if (bout.id === boutId) {
+              bracketChanged = true;
               const updatedScoreEvents = [...bout.scoreEvents, fullEvent];
               // Update round points
-              const updatedRounds = bout.rounds.map(r => {
+              const updatedRoundsList = bout.rounds.map(r => {
                 if (r.roundNumber === scoreEvent.roundNumber) {
                   return {
                     ...r,
@@ -1295,7 +1479,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 ...bout,
                 status: 'live',
                 scoreEvents: updatedScoreEvents,
-                rounds: updatedRounds,
+                rounds: updatedRoundsList,
               };
 
               if (activeBoutForScoring?.id === boutId) {
@@ -1305,22 +1489,31 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             }
             return bout;
           }),
-        })),
-      }))
-    );
+        }));
+
+        if (bracketChanged) {
+          const modBracket: Bracket = { ...b, rounds: updatedRounds };
+          supabaseUpsertBracket(modBracket);
+          return modBracket;
+        }
+        return b;
+      });
+      return next;
+    });
   };
 
   const updateBoutRoundScore = (boutId: string, roundNumber: number, redDelta: number, blueDelta: number) => {
     if (role === 'general_view') return;
 
-    setAllBrackets(prev =>
-      prev.map(b => ({
-        ...b,
-        rounds: b.rounds.map(round => ({
+    setAllBrackets(prev => {
+      const next = prev.map(b => {
+        let bracketChanged = false;
+        const updatedRounds = b.rounds.map(round => ({
           ...round,
           bouts: round.bouts.map(bout => {
             if (bout.id === boutId) {
-              const updatedRounds = bout.rounds.map(r => {
+              bracketChanged = true;
+              const updatedRoundsList = bout.rounds.map(r => {
                 if (r.roundNumber === roundNumber) {
                   return {
                     ...r,
@@ -1330,7 +1523,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 }
                 return r;
               });
-              const updatedBout: Bout = { ...bout, status: 'live', rounds: updatedRounds };
+              const updatedBout: Bout = { ...bout, status: 'live', rounds: updatedRoundsList };
               if (activeBoutForScoring?.id === boutId) {
                 setActiveBoutForScoring(updatedBout);
               }
@@ -1338,22 +1531,31 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             }
             return bout;
           }),
-        })),
-      }))
-    );
+        }));
+
+        if (bracketChanged) {
+          const modBracket: Bracket = { ...b, rounds: updatedRounds };
+          supabaseUpsertBracket(modBracket);
+          return modBracket;
+        }
+        return b;
+      });
+      return next;
+    });
   };
 
   const recordBoutExit = (boutId: string, roundNumber: number, corner: 'red' | 'blue') => {
     if (role === 'general_view') return;
 
-    setAllBrackets(prev =>
-      prev.map(b => ({
-        ...b,
-        rounds: b.rounds.map(round => ({
+    setAllBrackets(prev => {
+      const next = prev.map(b => {
+        let bracketChanged = false;
+        const updatedRounds = b.rounds.map(round => ({
           ...round,
           bouts: round.bouts.map(bout => {
             if (bout.id === boutId) {
-              const updatedRounds = bout.rounds.map(r => {
+              bracketChanged = true;
+              const updatedRoundsList = bout.rounds.map(r => {
                 if (r.roundNumber === roundNumber) {
                   // In Sanda, forcing opponent off the Leitai earns 2 points to the other corner!
                   return {
@@ -1381,7 +1583,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               const updatedBout: Bout = {
                 ...bout,
                 status: 'live',
-                rounds: updatedRounds,
+                rounds: updatedRoundsList,
                 scoreEvents: [...bout.scoreEvents, exitEvent],
               };
               if (activeBoutForScoring?.id === boutId) {
@@ -1391,22 +1593,31 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             }
             return bout;
           }),
-        })),
-      }))
-    );
+        }));
+
+        if (bracketChanged) {
+          const modBracket: Bracket = { ...b, rounds: updatedRounds };
+          supabaseUpsertBracket(modBracket);
+          return modBracket;
+        }
+        return b;
+      });
+      return next;
+    });
   };
 
   const recordBoutWarning = (boutId: string, roundNumber: number, corner: 'red' | 'blue') => {
     if (role === 'general_view') return;
 
-    setAllBrackets(prev =>
-      prev.map(b => ({
-        ...b,
-        rounds: b.rounds.map(round => ({
+    setAllBrackets(prev => {
+      const next = prev.map(b => {
+        let bracketChanged = false;
+        const updatedRounds = b.rounds.map(round => ({
           ...round,
           bouts: round.bouts.map(bout => {
             if (bout.id === boutId) {
-              const updatedRounds = bout.rounds.map(r => {
+              bracketChanged = true;
+              const updatedRoundsList = bout.rounds.map(r => {
                 if (r.roundNumber === roundNumber) {
                   return {
                     ...r,
@@ -1432,7 +1643,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
               const updatedBout: Bout = {
                 ...bout,
-                rounds: updatedRounds,
+                rounds: updatedRoundsList,
                 scoreEvents: [...bout.scoreEvents, warnEvent],
               };
               if (activeBoutForScoring?.id === boutId) {
@@ -1442,9 +1653,17 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             }
             return bout;
           }),
-        })),
-      }))
-    );
+        }));
+
+        if (bracketChanged) {
+          const modBracket: Bracket = { ...b, rounds: updatedRounds };
+          supabaseUpsertBracket(modBracket);
+          return modBracket;
+        }
+        return b;
+      });
+      return next;
+    });
   };
 
   const submitBoutResult = (
@@ -1836,7 +2055,11 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     // 1. Update event parameters
     if (data.event && Object.keys(data.event).length > 0) {
-      setEvent(prev => ({ ...prev, ...data.event }));
+      setEvent(prev => {
+        const next = { ...prev, ...data.event };
+        supabaseUpsertEvent(next);
+        return next;
+      });
       appliedParts.push(`Event "${data.event.name || event.name}" parameters`);
     }
 
@@ -1844,12 +2067,15 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (data.ageCategories && data.ageCategories.length > 0) {
       if (data.replaceAgeCategories) {
         setAgeCategoriesState(data.ageCategories);
+        supabaseBulkUpsertAgeCategories(data.ageCategories);
         appliedParts.push(`${data.ageCategories.length} Age Divisions (Replaced)`);
       } else {
         setAgeCategoriesState(prev => {
           const map = new Map(prev.map(a => [a.id, a]));
           data.ageCategories!.forEach(a => map.set(a.id, a));
-          return Array.from(map.values());
+          const merged = Array.from(map.values());
+          supabaseBulkUpsertAgeCategories(merged);
+          return merged;
         });
         appliedParts.push(`${data.ageCategories.length} Age Divisions (Merged)`);
       }
@@ -1859,12 +2085,15 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (data.weightCategories && data.weightCategories.length > 0) {
       if (data.replaceWeightCategories) {
         setWeightCategoriesState(data.weightCategories);
+        supabaseBulkUpsertWeightCategories(data.weightCategories);
         appliedParts.push(`${data.weightCategories.length} Weight Divisions (Replaced)`);
       } else {
         setWeightCategoriesState(prev => {
           const map = new Map(prev.map(w => [w.id, w]));
           data.weightCategories!.forEach(w => map.set(w.id, w));
-          return Array.from(map.values());
+          const merged = Array.from(map.values());
+          supabaseBulkUpsertWeightCategories(merged);
+          return merged;
         });
         appliedParts.push(`${data.weightCategories.length} Weight Divisions (Merged)`);
       }

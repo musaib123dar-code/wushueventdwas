@@ -19,7 +19,6 @@ import {
   LogOut,
   RotateCcw,
   Zap,
-  Database,
   Menu,
 } from 'lucide-react';
 
@@ -41,8 +40,6 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu }) => {
     activeTab,
     resetToDefaults,
     toggleEventLive,
-    supabaseStatus,
-    setSupabaseModalOpen,
   } = useTournament();
 
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -212,37 +209,6 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu }) => {
             className="p-2 text-slate-400 hover:text-slate-100 hover:bg-slate-900 rounded-lg transition-colors border border-slate-800 cursor-pointer"
           >
             {soundEnabled ? <Volume2 className="w-4 h-4 text-amber-400" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
-          </button>
-
-          {/* Supabase DB Connection Pill */}
-          <button
-            onClick={() => setSupabaseModalOpen(true)}
-            title={`Supabase DB: ${supabaseStatus.replace('_', ' ').toUpperCase()} (Click to open Supabase Settings)`}
-            className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-              supabaseStatus === 'connected'
-                ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/50 hover:border-emerald-400'
-                : supabaseStatus === 'connecting'
-                ? 'bg-amber-950/40 border-amber-500/40 text-amber-300 hover:bg-amber-900/50'
-                : supabaseStatus === 'error'
-                ? 'bg-rose-950/40 border-rose-500/40 text-rose-300 hover:bg-rose-900/50'
-                : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800 hover:border-slate-700'
-            }`}
-          >
-            <Database className="w-3.5 h-3.5" />
-            <span className="hidden xl:inline text-[11px]">
-              {supabaseStatus === 'connected' ? 'Supabase' : supabaseStatus === 'connecting' ? 'Connecting...' : supabaseStatus === 'error' ? 'DB Error' : 'Supabase DB'}
-            </span>
-            <span
-              className={`w-2 h-2 rounded-full ${
-                supabaseStatus === 'connected'
-                  ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'
-                  : supabaseStatus === 'connecting'
-                  ? 'bg-amber-400 animate-ping'
-                  : supabaseStatus === 'error'
-                  ? 'bg-rose-500'
-                  : 'bg-slate-500'
-              }`}
-            />
           </button>
 
           {/* Print bracket action */}
