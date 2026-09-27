@@ -32,17 +32,6 @@ import {
 } from '../utils/tournamentHelpers';
 import { exportMasterFullBackup } from '../utils/excelMasterHelper';
 import {
-  initializeCloudDataIfEmpty,
-  persistCloudActiveEvent,
-  persistCloudEventsList,
-  persistCloudPlayers,
-  persistCloudCategories,
-  persistCloudBrackets,
-  isFirestoreQuotaExceeded,
-  getFirestoreQuotaMessage,
-  onQuotaStatusChange,
-} from '../services/tournamentFirestore';
-import {
   getSupabaseConfig,
   testSupabaseConnection,
   pushAllDataToSupabase,
@@ -219,19 +208,10 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     'connected' | 'disconnected' | 'connecting' | 'not_configured' | 'error'
   >('not_configured');
 
-  // Firestore Quota Circuit Breaker States
-  const [firestoreQuotaExceeded, setFirestoreQuotaExceeded] = useState<boolean>(() => isFirestoreQuotaExceeded());
-  const [firestoreQuotaMsg, setFirestoreQuotaMsg] = useState<string>(() => getFirestoreQuotaMessage());
-  const [quotaAlertDismissed, setQuotaAlertDismissed] = useState<boolean>(false);
-
-  useEffect(() => {
-    return onQuotaStatusChange((exceeded, msg) => {
-      setFirestoreQuotaExceeded(exceeded);
-      setFirestoreQuotaMsg(msg);
-    });
-  }, []);
-
-  const dismissQuotaAlert = () => setQuotaAlertDismissed(true);
+  // Firestore Quota Circuit Breaker States (Disabled in favor of Supabase backend)
+  const firestoreQuotaExceeded = false;
+  const firestoreQuotaMsg = '';
+  const dismissQuotaAlert = () => {};
 
   const [event, setEvent] = useState<EventSetup>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_event`);
@@ -417,72 +397,6 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   useEffect(() => {
     localStorage.setItem(`${STORAGE_KEY}_audit`, JSON.stringify(auditLogs));
   }, [auditLogs]);
-
-  // Cloud Firestore Persistence with Quota Protection & 1500ms Debouncing
-  useEffect(() => {
-    if (isFirestoreQuotaExceeded()) return;
-    initializeCloudDataIfEmpty({
-      event,
-      events,
-      players: allPlayers,
-      categories: allCategories,
-      brackets: allBrackets,
-      users,
-      auditLogs,
-      ageCategories,
-      weightCategories,
-    }).catch(console.warn);
-  }, []);
-
-  useEffect(() => {
-    if (isFirestoreQuotaExceeded()) return;
-    const timer = setTimeout(() => {
-      if (!isFirestoreQuotaExceeded()) {
-        persistCloudPlayers(allPlayers).catch(console.warn);
-      }
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, [allPlayers]);
-
-  useEffect(() => {
-    if (isFirestoreQuotaExceeded()) return;
-    const timer = setTimeout(() => {
-      if (!isFirestoreQuotaExceeded()) {
-        persistCloudCategories(allCategories).catch(console.warn);
-      }
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, [allCategories]);
-
-  useEffect(() => {
-    if (isFirestoreQuotaExceeded()) return;
-    const timer = setTimeout(() => {
-      if (!isFirestoreQuotaExceeded()) {
-        persistCloudBrackets(allBrackets).catch(console.warn);
-      }
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, [allBrackets]);
-
-  useEffect(() => {
-    if (isFirestoreQuotaExceeded()) return;
-    const timer = setTimeout(() => {
-      if (!isFirestoreQuotaExceeded()) {
-        persistCloudEventsList(events).catch(console.warn);
-      }
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, [events]);
-
-  useEffect(() => {
-    if (isFirestoreQuotaExceeded()) return;
-    const timer = setTimeout(() => {
-      if (!isFirestoreQuotaExceeded()) {
-        persistCloudActiveEvent(event).catch(console.warn);
-      }
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, [event]);
 
   // ----------------------------------------------------
   // SUPABASE BACKEND INTEGRATION & REALTIME SYNC
@@ -1972,7 +1886,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   return (
     <TournamentContext.Provider
       value={{
-        firestoreQuotaExceeded: firestoreQuotaExceeded && !quotaAlertDismissed,
+        firestoreQuotaExceeded,
         firestoreQuotaMsg,
         dismissQuotaAlert,
         supabaseStatus,

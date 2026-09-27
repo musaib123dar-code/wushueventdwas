@@ -41,9 +41,6 @@ const MainAppContent: React.FC = () => {
     canWorkOnEvent,
     supabaseModalOpen,
     setSupabaseModalOpen,
-    firestoreQuotaExceeded,
-    firestoreQuotaMsg,
-    dismissQuotaAlert,
   } = useTournament();
 
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
@@ -116,25 +113,6 @@ const MainAppContent: React.FC = () => {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-amber-500 selection:text-slate-950">
       {/* Top Header */}
       <Header onOpenMobileMenu={() => setMobileDrawerOpen(true)} />
-
-      {/* Cloud Firestore Quota Alert Banner */}
-      {firestoreQuotaExceeded && (
-        <div className="bg-amber-950/90 border-b border-amber-600/40 text-amber-200 px-4 py-2.5 text-xs flex items-center justify-between gap-3 shadow-md z-30">
-          <div className="flex items-center gap-2 max-w-5xl mx-auto flex-1">
-            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-            <span>
-              <strong>Cloud Sync Notice:</strong> Firebase Firestore daily write quota has been reached for today and will reset tomorrow. All your tournament brackets, bouts, and player registrations remain safely saved in local offline storage without any disruption.
-            </span>
-          </div>
-          <button
-            onClick={dismissQuotaAlert}
-            className="p-1 hover:bg-amber-900/50 rounded text-amber-400 hover:text-white shrink-0 cursor-pointer"
-            title="Dismiss notice"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
 
       {/* Main Body with Sidebar + Content */}
       <div className="flex-1 flex max-w-7xl w-full mx-auto">

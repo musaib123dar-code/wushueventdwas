@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS public.weight_categories (
 -- 5. Players / Athletes Registry Table
 CREATE TABLE IF NOT EXISTS public.players (
   id TEXT PRIMARY KEY,
+  event_id TEXT,
   registration_number TEXT,
   name TEXT NOT NULL,
   father_name TEXT,
@@ -66,6 +67,7 @@ CREATE TABLE IF NOT EXISTS public.players (
   created_at TEXT,
   updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
+ALTER TABLE public.players ADD COLUMN IF NOT EXISTS event_id TEXT;
 
 -- 6. Category Divisions Table
 CREATE TABLE IF NOT EXISTS public.categories (

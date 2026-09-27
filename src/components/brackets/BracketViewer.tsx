@@ -15,7 +15,11 @@ import {
   Swords,
   ChevronRight,
   Info,
+  FileDown,
+  FileText,
+  ChevronDown,
 } from 'lucide-react';
+import { exportCategoryFixturesPdf, exportAllFixturesPdf } from '../../utils/fixturesPdfExport';
 
 export const BracketViewer: React.FC = () => {
   const {
@@ -38,6 +42,40 @@ export const BracketViewer: React.FC = () => {
   const [reopenReason, setReopenReason] = useState('');
   const [regenModalOpen, setRegenModalOpen] = useState(false);
   const [regenReason, setRegenReason] = useState('');
+  const [pdfDropdownOpen, setPdfDropdownOpen] = useState(false);
+  const [pdfExporting, setPdfExporting] = useState(false);
+
+  // Close PDF dropdown on outside click
+  useEffect(() => {
+    const handleOutside = () => setPdfDropdownOpen(false);
+    if (pdfDropdownOpen) {
+      window.addEventListener('click', handleOutside);
+      return () => window.removeEventListener('click', handleOutside);
+    }
+  }, [pdfDropdownOpen]);
+
+  const handleExportCategoryPdf = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!currentCategory) return;
+    setPdfExporting(true);
+    setPdfDropdownOpen(false);
+    try {
+      exportCategoryFixturesPdf(currentCategory, currentBracket, event);
+    } finally {
+      setPdfExporting(false);
+    }
+  };
+
+  const handleExportAllPdf = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setPdfExporting(true);
+    setPdfDropdownOpen(false);
+    try {
+      exportAllFixturesPdf(categories, brackets, event);
+    } finally {
+      setPdfExporting(false);
+    }
+  };
 
   // Keep selected category synchronized when switching championship events
   useEffect(() => {
@@ -153,6 +191,56 @@ export const BracketViewer: React.FC = () => {
             <Printer className="w-3.5 h-3.5 text-slate-400" />
             <span>Print Tree</span>
           </button>
+
+          {/* PDF Fixtures Export Menu */}
+          <div className="relative">
+            <button
+              onClick={e => {
+                e.stopPropagation();
+                setPdfDropdownOpen(prev => !prev);
+              }}
+              disabled={pdfExporting}
+              className="px-3 py-1.5 text-xs font-bold text-slate-950 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 rounded-lg shadow-md shadow-amber-500/20 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              title="Export Fixtures in PDF Format"
+            >
+              <FileDown className="w-3.5 h-3.5 text-slate-950" />
+              <span>{pdfExporting ? 'Generating PDF...' : 'Export Fixtures PDF'}</span>
+              <ChevronDown className={`w-3 h-3 text-slate-900 transition-transform ${pdfDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {pdfDropdownOpen && (
+              <div
+                onClick={e => e.stopPropagation()}
+                className="absolute right-0 top-full mt-1.5 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-1.5 z-30 animate-in fade-in zoom-in-95 duration-150"
+              >
+                <div className="px-2 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+                  PDF Fixture Export Options
+                </div>
+
+                <button
+                  onClick={handleExportCategoryPdf}
+                  className="w-full text-left px-2.5 py-2 rounded-lg text-xs hover:bg-slate-800 text-slate-200 hover:text-white flex items-center gap-2 cursor-pointer transition-colors"
+                >
+                  <FileText className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold truncate">Current Division PDF</div>
+                    <div className="text-[10px] text-slate-400 truncate">{currentCategory?.name || 'Selected Category'}</div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={handleExportAllPdf}
+                  className="w-full text-left px-2.5 py-2 rounded-lg text-xs hover:bg-slate-800 text-slate-200 hover:text-white flex items-center gap-2 cursor-pointer transition-colors mt-0.5"
+                >
+                  <FileDown className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold">Complete Championship Booklet</div>
+                    <div className="text-[10px] text-slate-400">All {categories.length} divisions in 1 PDF</div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

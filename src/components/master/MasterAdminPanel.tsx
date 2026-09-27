@@ -35,7 +35,9 @@ import {
   ExternalLink,
   Trophy,
   Zap,
+  FileDown,
 } from 'lucide-react';
+import { exportAllFixturesPdf } from '../../utils/fixturesPdfExport';
 
 export const MasterAdminPanel: React.FC = () => {
   const {
@@ -1653,23 +1655,38 @@ export const MasterAdminPanel: React.FC = () => {
                     )}
 
                     {/* Switch workspace */}
-                    {!isActiveWorkspace ? (
+                    <div className="flex items-center gap-2">
                       <button
                         onClick={() => {
-                          switchEvent(ev.id);
-                          showFeedback('info', `Switched active workspace to "${ev.name}".`);
+                          const evCategories = allCategories.filter(c => c.eventId === ev.id || (!c.eventId && events.length <= 1));
+                          const evBrackets = allBrackets.filter(b => b.eventId === ev.id || (!b.eventId && events.length <= 1));
+                          exportAllFixturesPdf(evCategories, evBrackets, ev);
                         }}
-                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-700 hover:border-amber-500/40 transition-colors cursor-pointer"
+                        title="Download official fixtures booklet PDF for this championship"
                       >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        <span>Switch Workspace</span>
+                        <FileDown className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Fixtures PDF</span>
                       </button>
-                    ) : (
-                      <span className="text-xs text-amber-400 font-semibold flex items-center gap-1 px-2.5 py-1 bg-amber-500/10 rounded-md border border-amber-500/20">
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Currently Active</span>
-                      </span>
-                    )}
+
+                      {!isActiveWorkspace ? (
+                        <button
+                          onClick={() => {
+                            switchEvent(ev.id);
+                            showFeedback('info', `Switched active workspace to "${ev.name}".`);
+                          }}
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>Switch Workspace</span>
+                        </button>
+                      ) : (
+                        <span className="text-xs text-amber-400 font-semibold flex items-center gap-1 px-2.5 py-1 bg-amber-500/10 rounded-md border border-amber-500/20">
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Currently Active</span>
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
