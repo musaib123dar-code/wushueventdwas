@@ -98,11 +98,11 @@ interface TournamentContextType {
   canWorkOnEvent: boolean;
   
   ageCategories: AgeCategory[];
-  setAgeCategories: (categories: AgeCategory[]) => void;
-  addAgeCategory: (cat: Omit<AgeCategory, 'id'>) => void;
-  updateAgeCategory: (id: string, cat: Partial<AgeCategory>) => void;
-  deleteAgeCategory: (id: string) => void;
-  resetAgeCategories: () => void;
+  setAgeCategories: (categories: AgeCategory[]) => { success: boolean; error?: string };
+  addAgeCategory: (cat: Omit<AgeCategory, 'id'>) => { success: boolean; error?: string; ageCategory?: AgeCategory };
+  updateAgeCategory: (id: string, cat: Partial<AgeCategory>) => { success: boolean; error?: string };
+  deleteAgeCategory: (id: string) => { success: boolean; error?: string };
+  resetAgeCategories: () => { success: boolean; error?: string };
   
   weightCategories: WeightCategory[];
   setWeightCategories: (categories: WeightCategory[]) => void;
@@ -789,51 +789,64 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   // Age Categories Management (Super Admin & Admin)
   const setAgeCategories = (cats: AgeCategory[]) => {
-    if (role === 'general_view') return;
+    if (role !== 'super_admin' && role !== 'admin') {
+      return { success: false, error: 'Permission denied: Only Super Admin and Admin can modify age classifications.' };
+    }
     setAgeCategoriesState(cats);
     supabaseBulkUpsertAgeCategories(cats);
-    addAuditLog('UPDATE', 'Age Categories', `Updated age divisions list (${cats.length} divisions)`);
+    addAuditLog('UPDATE', 'Age Categories', `Updated age classifications list (${cats.length} classifications)`);
+    return { success: true };
   };
 
   const addAgeCategory = (catData: Omit<AgeCategory, 'id'>) => {
-    if (role === 'general_view') return;
+    if (role !== 'super_admin' && role !== 'admin') {
+      return { success: false, error: 'Permission denied: Only Super Admin and Admin can create age classifications.' };
+    }
     const newCat: AgeCategory = {
       ...catData,
       id: `age-cat-${Date.now()}`,
     };
     setAgeCategoriesState(prev => [...prev, newCat]);
     supabaseUpsertAgeCategory(newCat);
-    addAuditLog('CREATE', `Age Category: ${newCat.name}`, `${newCat.minAge}-${newCat.maxAge} years on reference date`);
+    addAuditLog('CREATE', `Age Category: ${newCat.name}`, `${newCat.minAge}-${newCat.maxAge} years (${newCat.status || 'active'})`);
+    return { success: true, ageCategory: newCat };
   };
 
   const updateAgeCategory = (id: string, updated: Partial<AgeCategory>) => {
-    if (role === 'general_view') return;
-    setAgeCategoriesState(prev =>
-      prev.map(c => {
-        if (c.id === id) {
-          const mod = { ...c, ...updated };
-          supabaseUpsertAgeCategory(mod);
-          return mod;
-        }
-        return c;
-      })
-    );
-    addAuditLog('UPDATE', `Age Category: ${id}`, `Updated division settings`);
+    if (role !== 'super_admin' && role !== 'admin') {
+      return { success: false, error: 'Permission denied: Only Super Admin and Admin can edit age classifications.' };
+    }
+    const target = ageCategories.find(c => c.id === id);
+    if (!target) return { success: false, error: 'Age classification not found.' };
+
+    const mod = { ...target, ...updated };
+    setAgeCategoriesState(prev => prev.map(c => (c.id === id ? mod : c)));
+    supabaseUpsertAgeCategory(mod);
+    addAuditLog('UPDATE', `Age Category: ${mod.name}`, `Updated age classification (${mod.minAge}-${mod.maxAge} yrs)`);
+    return { success: true };
   };
 
   const deleteAgeCategory = (id: string) => {
-    if (role === 'general_view') return;
+    if (role !== 'super_admin' && role !== 'admin') {
+      return { success: false, error: 'Permission denied: Only Super Admin and Admin can delete age classifications.' };
+    }
     const target = ageCategories.find(c => c.id === id);
+    if (!target) return { success: false, error: 'Age classification not found.' };
+
     setAgeCategoriesState(prev => prev.filter(c => c.id !== id));
     supabaseDeleteAgeCategory(id);
-    addAuditLog('DELETE', `Age Category: ${target?.name || id}`, `Removed age category`);
+    addAuditLog('DELETE', `Age Category: ${target.name}`, `Removed age classification ${target.name} (${target.minAge}-${target.maxAge} yrs)`);
+    return { success: true };
   };
 
   const resetAgeCategories = () => {
-    if (role === 'general_view') return;
+    if (role !== 'super_admin' && role !== 'admin') {
+      return { success: false, error: 'Permission denied: Only Super Admin and Admin can reset age classifications.' };
+    }
     setAgeCategoriesState(INITIAL_AGE_CATEGORIES);
     supabaseBulkUpsertAgeCategories(INITIAL_AGE_CATEGORIES);
     addAuditLog('UPDATE', 'Age Categories', 'Reset to official IWUF age classifications');
+    return { success: true };
   };
 
   // Weight Categories Management (Super Admin & Admin)

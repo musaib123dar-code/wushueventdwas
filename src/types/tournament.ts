@@ -19,6 +19,7 @@ export interface AgeCategory {
   minAge: number;
   maxAge: number;
   description?: string;
+  status?: 'active' | 'inactive' | 'open' | 'closed';
 }
 
 export interface WeightCategory {

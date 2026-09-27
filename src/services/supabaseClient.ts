@@ -362,6 +362,7 @@ export function mapAgeCategoryToRow(a: AgeCategory) {
     min_age: Number(a.minAge),
     max_age: Number(a.maxAge),
     description: a.description || null,
+    status: a.status || 'active',
   };
 }
 
@@ -372,6 +373,7 @@ export function mapRowToAgeCategory(r: any): AgeCategory {
     minAge: Number(r.min_age),
     maxAge: Number(r.max_age),
     description: r.description || '',
+    status: r.status || 'active',
   };
 }
 

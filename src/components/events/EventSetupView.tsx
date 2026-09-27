@@ -1,6 +1,6 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useTournament } from '../../context/TournamentContext';
-import { AgeCategory, WeightCategory, EventSetup } from '../../types/tournament';
+import { AgeCategory, WeightCategory } from '../../types/tournament';
 import {
   CalendarDays,
   Save,
@@ -15,20 +15,11 @@ import {
   AlertTriangle,
   Scale,
   Users,
-  Trophy,
-  Radio,
-  ExternalLink,
-  PlusCircle,
 } from 'lucide-react';
 
 export const EventSetupView: React.FC = () => {
   const {
     event,
-    events,
-    switchEvent,
-    createOfficialEvent,
-    deleteEvent,
-    toggleEventLive,
     updateEvent,
     ageCategories,
     addAgeCategory,
@@ -41,8 +32,6 @@ export const EventSetupView: React.FC = () => {
     deleteWeightCategory,
     resetWeightCategories,
     categories,
-    players,
-    allPlayers,
     role,
   } = useTournament();
 
@@ -62,41 +51,7 @@ export const EventSetupView: React.FC = () => {
     isLive: event.isLive,
   });
 
-  // Keep form data synchronized when the active championship event is switched
-  useEffect(() => {
-    setFormData({
-      name: event.name,
-      organizer: event.organizer,
-      venue: event.venue,
-      city: event.city,
-      state: event.state || '',
-      startDate: event.startDate,
-      endDate: event.endDate,
-      tournamentReferenceDate: event.tournamentReferenceDate,
-      roundDurationSec: event.roundDurationSec,
-      numberOfRounds: event.roundsCount || 3,
-      restDurationSec: event.restDurationSec,
-      rings: [...event.rings],
-      isLive: event.isLive,
-    });
-  }, [event]);
-
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
-
-  // New Event creation modal
-  const [isNewEventModalOpen, setIsNewEventModalOpen] = useState(false);
-  const [newEventForm, setNewEventForm] = useState({
-    name: '',
-    organizer: 'Wushu Association / Organizing Committee',
-    venue: '',
-    city: '',
-    state: '',
-    tournamentReferenceDate: new Date().toISOString().split('T')[0],
-    isLive: true,
-  });
-
-  // Delete event confirmation modal
-  const [deleteEventTarget, setDeleteEventTarget] = useState<EventSetup | null>(null);
 
   // Age Category Modal state
   const [isAgeModalOpen, setIsAgeModalOpen] = useState(false);
@@ -106,6 +61,7 @@ export const EventSetupView: React.FC = () => {
     minAge: 12,
     maxAge: 14,
     description: '',
+    status: 'active' as 'active' | 'inactive' | 'open' | 'closed',
   });
   const [ageFormError, setAgeFormError] = useState<string | null>(null);
 
@@ -138,6 +94,7 @@ export const EventSetupView: React.FC = () => {
     message: '',
   });
 
+  const isSuperAdmin = role === 'super_admin';
   const isSuperOrAdmin = role === 'super_admin' || role === 'admin';
 
   const showFeedback = (text: string) => {
@@ -165,26 +122,30 @@ export const EventSetupView: React.FC = () => {
     showFeedback('Tournament configuration successfully updated!');
   };
 
-  // --- Age Category Handlers ---
+  // --- Age Category Handlers (Super Admin & Admin) ---
   const handleOpenAddAge = () => {
+    if (!isSuperOrAdmin) return;
     setEditingAge(null);
     setAgeForm({
       name: '',
       minAge: 12,
       maxAge: 14,
       description: 'Athletes aged 12 to 14 years on tournament reference date',
+      status: 'active',
     });
     setAgeFormError(null);
     setIsAgeModalOpen(true);
   };
 
   const handleOpenEditAge = (a: AgeCategory) => {
+    if (!isSuperOrAdmin) return;
     setEditingAge(a);
     setAgeForm({
       name: a.name,
       minAge: a.minAge,
       maxAge: a.maxAge,
       description: a.description || '',
+      status: a.status || 'active',
     });
     setAgeFormError(null);
     setIsAgeModalOpen(true);
@@ -192,6 +153,10 @@ export const EventSetupView: React.FC = () => {
 
   const handleSaveAge = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isSuperOrAdmin) {
+      setAgeFormError('Unauthorized: Only Super Admin and Admin can add or edit age classifications.');
+      return;
+    }
     if (!ageForm.name.trim()) {
       setAgeFormError('Age classification name is required (e.g. Junior, Senior).');
       return;
@@ -206,33 +171,44 @@ export const EventSetupView: React.FC = () => {
     }
 
     if (editingAge) {
-      updateAgeCategory(editingAge.id, {
+      const res = updateAgeCategory(editingAge.id, {
         name: ageForm.name.trim(),
         minAge: Number(ageForm.minAge),
         maxAge: Number(ageForm.maxAge),
         description: ageForm.description.trim(),
+        status: (ageForm.status as 'active' | 'inactive') || 'active',
       });
+      if (res && res.error) {
+        setAgeFormError(res.error);
+        return;
+      }
       showFeedback(`Updated age classification: ${ageForm.name}`);
     } else {
-      addAgeCategory({
+      const res = addAgeCategory({
         name: ageForm.name.trim(),
         minAge: Number(ageForm.minAge),
         maxAge: Number(ageForm.maxAge),
         description: ageForm.description.trim() || `Athletes aged ${ageForm.minAge} to ${ageForm.maxAge} years on tournament reference date`,
+        status: (ageForm.status as 'active' | 'inactive') || 'active',
       });
+      if (res && res.error) {
+        setAgeFormError(res.error);
+        return;
+      }
       showFeedback(`Created new age classification: ${ageForm.name}`);
     }
     setIsAgeModalOpen(false);
   };
 
   const handlePromptDeleteAge = (a: AgeCategory) => {
+    if (!isSuperOrAdmin) return;
     const linked = categories.filter(c => c.ageCategoryId === a.id);
     setConfirmDialog({
       isOpen: true,
       type: 'delete_age',
       id: a.id,
-      title: `Delete Age Classification "${a.name}"?`,
-      message: `Are you sure you want to remove ${a.name} (${a.minAge}-${a.maxAge} yrs)?`,
+      title: 'Delete this age classification?',
+      message: 'Deleting this classification may affect categories or brackets using it.',
       warning:
         linked.length > 0
           ? `Warning: ${linked.length} category division(s) are currently configured with this age classification.`
@@ -241,6 +217,7 @@ export const EventSetupView: React.FC = () => {
   };
 
   const handlePromptResetAges = () => {
+    if (!isSuperOrAdmin) return;
     setConfirmDialog({
       isOpen: true,
       type: 'reset_ages',
@@ -352,49 +329,6 @@ export const EventSetupView: React.FC = () => {
     setConfirmDialog({ isOpen: false, type: 'delete_age', title: '', message: '' });
   };
 
-  const handleCreateNewEvent = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newEventForm.name.trim()) return;
-
-    createOfficialEvent(
-      {
-        name: newEventForm.name.trim(),
-        organizer: newEventForm.organizer.trim(),
-        venue: newEventForm.venue.trim() || 'Indoor Sports Stadium',
-        city: newEventForm.city.trim() || 'City Arena',
-        state: newEventForm.state.trim() || 'State',
-        tournamentReferenceDate: newEventForm.tournamentReferenceDate,
-      },
-      true, // clearExistingRoster = true to start completely clean with 0 athletes for this event!
-      newEventForm.isLive
-    );
-
-    setIsNewEventModalOpen(false);
-    showFeedback(`Created fresh championship "${newEventForm.name}". Athlete roster is isolated for this tournament.`);
-    setNewEventForm({
-      name: '',
-      organizer: 'Wushu Association / Organizing Committee',
-      venue: '',
-      city: '',
-      state: '',
-      tournamentReferenceDate: new Date().toISOString().split('T')[0],
-      isLive: true,
-    });
-  };
-
-  const handleConfirmDeleteEvent = () => {
-    if (!deleteEventTarget) return;
-    const res = deleteEvent(deleteEventTarget.id);
-    if (res.success) {
-      showFeedback(
-        `Championship "${deleteEventTarget.name}" deleted. Purged ${res.deletedPlayersCount ?? 0} registered athletes, ${res.deletedCategoriesCount ?? 0} categories, and ${res.deletedBracketsCount ?? 0} brackets.`
-      );
-    } else {
-      showFeedback(res.error || 'Failed to delete event.');
-    }
-    setDeleteEventTarget(null);
-  };
-
   // Filtered weight categories
   const filteredWeightCategories = useMemo(() => {
     if (weightFilterGender === 'all') return weightCategories;
@@ -406,29 +340,14 @@ export const EventSetupView: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-16">
-      {/* Top Header & Championship Actions */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <CalendarDays className="w-5 h-5 text-amber-400" />
-            Tournament Setup & Competition Parameters
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Configure event details, ring allocation, and official age calculation reference date.
-          </p>
-        </div>
-
-        {isSuperOrAdmin && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setIsNewEventModalOpen(true)}
-              className="px-3.5 py-2 text-xs font-bold text-slate-950 bg-amber-500 hover:bg-amber-400 rounded-lg transition-colors flex items-center gap-1.5 shadow-md shadow-amber-500/10 cursor-pointer"
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span>+ New Tournament / League</span>
-            </button>
-          </div>
-        )}
+      <div>
+        <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+          <CalendarDays className="w-5 h-5 text-amber-400" />
+          Tournament Setup & Competition Parameters
+        </h1>
+        <p className="text-xs text-slate-400 mt-1">
+          Configure event details, ring allocation, and official age calculation reference date.
+        </p>
       </div>
 
       {savedMsg && (
@@ -437,81 +356,6 @@ export const EventSetupView: React.FC = () => {
           <span>{savedMsg}</span>
         </div>
       )}
-
-      {/* Active Tournament Championship Workspace Card */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-slate-950 border border-amber-500/30 rounded-2xl p-4 sm:p-5 shadow-xl relative overflow-hidden">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                Active Championship Workspace
-              </span>
-              {event.isLive ? (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  LIVE
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                  NOT ACTIVE (Draft)
-                </span>
-              )}
-            </div>
-            <h2 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
-              <Trophy className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>{event.name || 'Untitled Championship'}</span>
-            </h2>
-            <p className="text-xs text-slate-400">
-              {event.organizer || 'State Wushu Federation'} · {event.venue}, {event.city} · Age Ref Date: <span className="text-amber-400 font-mono-tabular">{event.tournamentReferenceDate}</span>
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Registered Athletes for this event badge */}
-            <div className="px-3 py-2 bg-slate-950/80 rounded-xl border border-slate-800 text-center">
-              <div className="text-xs font-mono font-bold text-white">{players.length}</div>
-              <div className="text-[10px] text-slate-400 uppercase tracking-wider">Athletes in Event</div>
-            </div>
-
-            {/* Categories for this event badge */}
-            <div className="px-3 py-2 bg-slate-950/80 rounded-xl border border-slate-800 text-center">
-              <div className="text-xs font-mono font-bold text-amber-400">{categories.length}</div>
-              <div className="text-[10px] text-slate-400 uppercase tracking-wider">Categories</div>
-            </div>
-
-            {/* Switch Active Tournament Dropdown (if multiple exist) */}
-            {events.length > 1 && (
-              <div className="flex items-center gap-1.5">
-                <select
-                  value={event.id}
-                  onChange={e => switchEvent(e.target.value)}
-                  className="bg-slate-950 border border-slate-700 hover:border-amber-400 text-slate-100 text-xs rounded-xl px-3 py-2 font-medium focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer transition-colors max-w-[200px] truncate"
-                  title="Switch Active Championship Workspace"
-                >
-                  {events.map(ev => (
-                    <option key={ev.id} value={ev.id}>
-                      {ev.name} {ev.isLive ? '(Live)' : '(Draft)'}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Super Admin Event Deletion Button */}
-            {role === 'super_admin' && (
-              <button
-                onClick={() => setDeleteEventTarget(event)}
-                className="px-3 py-2 text-xs font-medium text-rose-400 hover:text-white bg-rose-950/30 hover:bg-rose-900/50 rounded-xl border border-rose-900/40 transition-colors flex items-center gap-1.5 cursor-pointer"
-                title="Delete this championship event and all associated athlete registrations, categories, and fixtures"
-              >
-                <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-                <span className="hidden sm:inline">Delete Championship</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left 7/8 Cols: Form Setup */}
@@ -715,7 +559,7 @@ export const EventSetupView: React.FC = () => {
                     className="flex items-center gap-1 px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Add Age</span>
+                    <span>+ Add Age</span>
                   </button>
                 </div>
               )}
@@ -724,45 +568,55 @@ export const EventSetupView: React.FC = () => {
             <div className="space-y-2 text-xs">
               {ageCategories.length === 0 ? (
                 <div className="p-4 text-center text-slate-500 border border-dashed border-slate-800 rounded-xl">
-                  No age classifications defined. Click &ldquo;Add Age&rdquo; or reset to defaults.
+                  No age classifications defined. {isSuperOrAdmin ? 'Click "+ Add Age" or reset to defaults.' : 'No age classifications available.'}
                 </div>
               ) : (
                 ageCategories.map(a => (
                   <div
                     key={a.id}
-                    className="p-2.5 bg-slate-950 border border-slate-800 hover:border-slate-700/80 rounded-xl flex items-center justify-between gap-3 group transition-all"
+                    className="p-3 bg-slate-950 border border-slate-800 hover:border-slate-700/80 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 group transition-all"
                   >
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0 flex-1 space-y-0.5">
                       <div className="font-bold text-slate-200 flex items-center gap-2">
                         <span className="truncate">{a.name}</span>
+                        {a.status === 'inactive' || a.status === 'closed' ? (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20 uppercase tracking-wider">
+                            Closed
+                          </span>
+                        ) : (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase tracking-wider">
+                            Active
+                          </span>
+                        )}
                       </div>
-                      <div className="text-[10px] text-slate-400 truncate">
+                      <div className="text-[10px] text-slate-400 line-clamp-2">
                         {a.description || `Athletes aged ${a.minAge} to ${a.maxAge} years on reference date`}
+                      </div>
+                      <div className="text-amber-400 font-mono-tabular font-semibold text-xs pt-0.5">
+                        {a.minAge} - {a.maxAge} yrs
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-amber-400 font-mono-tabular font-semibold text-xs whitespace-nowrap bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                        {a.minAge} - {a.maxAge} yrs
-                      </span>
-
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
                       {isSuperOrAdmin && (
-                        <div className="flex items-center gap-1 opacity-90 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-1.5">
                           <button
                             type="button"
                             onClick={() => handleOpenEditAge(a)}
                             title="Edit age classification"
-                            className="p-1 text-slate-400 hover:text-amber-300 hover:bg-slate-800 rounded-md transition-colors cursor-pointer"
+                            className="px-2 py-1 text-xs font-medium text-slate-300 hover:text-amber-300 bg-slate-900 hover:bg-slate-800 border border-slate-700/80 rounded-md transition-colors flex items-center gap-1 cursor-pointer"
                           >
-                            <Edit2 className="w-3.5 h-3.5" />
+                            <Edit2 className="w-3 h-3 text-amber-400" />
+                            <span>Edit</span>
                           </button>
                           <button
                             type="button"
                             onClick={() => handlePromptDeleteAge(a)}
                             title="Delete age classification"
-                            className="p-1 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-md transition-colors cursor-pointer"
+                            className="px-2 py-1 text-xs font-medium text-slate-300 hover:text-rose-400 bg-slate-900 hover:bg-slate-800 border border-slate-700/80 rounded-md transition-colors flex items-center gap-1 cursor-pointer"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-3 h-3 text-rose-400" />
+                            <span>Delete</span>
                           </button>
                         </div>
                       )}
@@ -993,6 +847,20 @@ export const EventSetupView: React.FC = () => {
 
               <div>
                 <label className="block text-slate-300 font-semibold mb-1">
+                  Status (Open / Closed)
+                </label>
+                <select
+                  value={ageForm.status || 'active'}
+                  onChange={e => setAgeForm({ ...ageForm, status: e.target.value as 'active' | 'inactive' | 'open' | 'closed' })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-amber-500"
+                >
+                  <option value="active">Active (Open for Athlete Registration)</option>
+                  <option value="inactive">Closed (Registration Disabled / Archived)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
                   Description / Qualification Notes
                 </label>
                 <textarea
@@ -1019,7 +887,7 @@ export const EventSetupView: React.FC = () => {
                   type="submit"
                   className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg transition-all shadow-md shadow-amber-500/20 cursor-pointer"
                 >
-                  {editingAge ? 'Save Changes' : 'Create Age Classification'}
+                  Save Changes
                 </button>
               </div>
             </form>
@@ -1194,194 +1062,7 @@ export const EventSetupView: React.FC = () => {
                 onClick={handleExecuteConfirm}
                 className="px-4 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 rounded-lg transition-all shadow-md shadow-rose-600/20 cursor-pointer"
               >
-                Confirm
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* Create New Championship Modal */}
-      {/* ========================================================================= */}
-      {isNewEventModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-slate-900 border border-amber-500/40 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
-                  <Trophy className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-white">Create New Championship Event</h3>
-                  <p className="text-xs text-slate-400">Fresh tournament with isolated athlete roster and fixtures</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsNewEventModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300/90 leading-relaxed">
-              <strong>Event Isolation:</strong> Athletes registered for this new championship will only be visible in this event. Fixture brackets and divisions are completely isolated.
-            </div>
-
-            <form onSubmit={handleCreateNewEvent} className="space-y-4 text-xs">
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">
-                  Championship Event Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. State Women's Wushu League 2026"
-                  value={newEventForm.name}
-                  onChange={e => setNewEventForm({ ...newEventForm, name: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">
-                  Organizing Committee / Federation
-                </label>
-                <input
-                  type="text"
-                  value={newEventForm.organizer}
-                  onChange={e => setNewEventForm({ ...newEventForm, organizer: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Venue / Stadium</label>
-                  <input
-                    type="text"
-                    placeholder="Indoor Stadium"
-                    value={newEventForm.venue}
-                    onChange={e => setNewEventForm({ ...newEventForm, venue: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">City / State</label>
-                  <input
-                    type="text"
-                    placeholder="New Delhi, Delhi"
-                    value={newEventForm.city}
-                    onChange={e => setNewEventForm({ ...newEventForm, city: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">
-                    Age Calculation Cutoff Date *
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={newEventForm.tournamentReferenceDate}
-                    onChange={e => setNewEventForm({ ...newEventForm, tournamentReferenceDate: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Initial Status</label>
-                  <select
-                    value={newEventForm.isLive ? 'live' : 'draft'}
-                    onChange={e => setNewEventForm({ ...newEventForm, isLive: e.target.value === 'live' })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-amber-500 cursor-pointer"
-                  >
-                    <option value="live">● LIVE (Available immediately)</option>
-                    <option value="draft">○ Draft (Restricted to Admins)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setIsNewEventModalOpen(false)}
-                  className="px-4 py-2 text-slate-400 hover:text-white rounded-lg transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg transition-all shadow-md shadow-amber-500/20 cursor-pointer"
-                >
-                  Create Championship
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* Delete Championship Event Modal */}
-      {/* ========================================================================= */}
-      {deleteEventTarget && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-slate-900 border border-rose-500/50 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0">
-                <Trash2 className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-white">Delete Championship Event</h3>
-                <p className="text-xs text-rose-400/90 font-medium">Permanent Cascading Deletion</p>
-              </div>
-            </div>
-
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Are you sure you want to permanently delete{' '}
-              <strong className="text-white">"{deleteEventTarget.name || 'Untitled Event'}"</strong>?
-            </p>
-
-            <div className="p-3.5 bg-rose-950/40 border border-rose-900/50 rounded-xl space-y-2 text-xs text-rose-200">
-              <div className="font-bold flex items-center gap-1.5 text-rose-300">
-                <AlertTriangle className="w-4 h-4 text-rose-400" />
-                All associated data will be permanently wiped:
-              </div>
-              <ul className="list-disc pl-5 space-y-1 text-slate-300 text-[11px]">
-                <li>
-                  <strong className="text-rose-300">
-                    {allPlayers.filter(p => p.eventId === deleteEventTarget.id || (!p.eventId && events.length <= 1)).length} Registered Athletes
-                  </strong>{' '}
-                  registered for this championship will be deleted from the database.
-                </li>
-                <li>
-                  <strong className="text-rose-300">
-                    {categories.length} Category Divisions
-                  </strong>{' '}
-                  and all associated bout draw records will be deleted.
-                </li>
-                <li>All knockout fixture trees and live scoring bouts will be deleted.</li>
-              </ul>
-            </div>
-
-            <div className="pt-2 flex items-center justify-end gap-2.5">
-              <button
-                type="button"
-                onClick={() => setDeleteEventTarget(null)}
-                className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white rounded-lg transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDeleteEvent}
-                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 rounded-lg transition-all shadow-md shadow-rose-600/20 cursor-pointer"
-              >
-                Yes, Permanently Delete All Data
+                {confirmDialog.type.startsWith('delete') ? 'Delete' : 'Confirm'}
               </button>
             </div>
           </div>
