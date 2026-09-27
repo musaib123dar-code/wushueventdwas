@@ -32,6 +32,17 @@ import {
 } from '../utils/tournamentHelpers';
 import { exportMasterFullBackup } from '../utils/excelMasterHelper';
 import {
+  initializeCloudDataIfEmpty,
+  persistCloudActiveEvent,
+  persistCloudEventsList,
+  persistCloudPlayers,
+  persistCloudCategories,
+  persistCloudBrackets,
+  isFirestoreQuotaExceeded,
+  getFirestoreQuotaMessage,
+  onQuotaStatusChange,
+} from '../services/tournamentFirestore';
+import {
   getSupabaseConfig,
   testSupabaseConnection,
   pushAllDataToSupabase,
@@ -68,6 +79,9 @@ import {
 } from '../services/supabaseClient';
 
 interface TournamentContextType {
+  firestoreQuotaExceeded: boolean;
+  firestoreQuotaMsg: string;
+  dismissQuotaAlert: () => void;
   supabaseStatus: 'connected' | 'disconnected' | 'connecting' | 'not_configured' | 'error';
   supabaseModalOpen: boolean;
   setSupabaseModalOpen: (open: boolean) => void;
@@ -93,7 +107,13 @@ interface TournamentContextType {
   createOfficialEvent: (eventData: Partial<EventSetup>, clearExistingRoster?: boolean, isLive?: boolean) => EventSetup;
   toggleEventLive: (eventId: string, isLive?: boolean) => void;
   switchEvent: (eventId: string) => void;
-  deleteEvent: (eventId: string) => { success: boolean; error?: string };
+  deleteEvent: (eventId: string) => {
+    success: boolean;
+    error?: string;
+    deletedPlayersCount?: number;
+    deletedCategoriesCount?: number;
+    deletedBracketsCount?: number;
+  };
   isEventLive: boolean;
   canWorkOnEvent: boolean;
   
@@ -111,21 +131,24 @@ interface TournamentContextType {
   deleteWeightCategory: (id: string) => void;
   resetWeightCategories: () => void;
   
-  players: Player[];
+  allPlayers: Player[];
+  players: Player[]; // Filtered to the currently active championship event
   addPlayer: (playerData: Omit<Player, 'id' | 'createdAt'>) => { success: boolean; error?: string; player?: Player };
   bulkAddPlayers: (playersData: Omit<Player, 'id' | 'createdAt'>[], replace?: boolean) => { added: number; duplicates: number };
   updatePlayer: (id: string, playerData: Partial<Player>) => { success: boolean; error?: string };
   deletePlayer: (id: string) => { success: boolean; error?: string };
   clearAllPlayers: () => void;
   
-  categories: Category[];
+  allCategories: Category[];
+  categories: Category[]; // Filtered to the currently active championship event
   createCategory: (cat: Omit<Category, 'id' | 'isLocked' | 'eligiblePlayerIds'>) => Category;
   lockCategory: (categoryId: string) => void;
   unlockCategory: (categoryId: string) => void;
   deleteCategory: (categoryId: string) => { success: boolean; error?: string };
   clearAllCategoriesAndBrackets: () => void;
   
-  brackets: Bracket[];
+  allBrackets: Bracket[];
+  brackets: Bracket[]; // Filtered to the currently active championship event
   generateBracketForCategory: (categoryId: string, randomize?: boolean) => { success: boolean; error?: string; bracket?: Bracket };
   regenerateBracketForCategory: (categoryId: string, reason: string) => { success: boolean; error?: string };
   
@@ -196,6 +219,20 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     'connected' | 'disconnected' | 'connecting' | 'not_configured' | 'error'
   >('not_configured');
 
+  // Firestore Quota Circuit Breaker States
+  const [firestoreQuotaExceeded, setFirestoreQuotaExceeded] = useState<boolean>(() => isFirestoreQuotaExceeded());
+  const [firestoreQuotaMsg, setFirestoreQuotaMsg] = useState<string>(() => getFirestoreQuotaMessage());
+  const [quotaAlertDismissed, setQuotaAlertDismissed] = useState<boolean>(false);
+
+  useEffect(() => {
+    return onQuotaStatusChange((exceeded, msg) => {
+      setFirestoreQuotaExceeded(exceeded);
+      setFirestoreQuotaMsg(msg);
+    });
+  }, []);
+
+  const dismissQuotaAlert = () => setQuotaAlertDismissed(true);
+
   const [event, setEvent] = useState<EventSetup>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_event`);
     if (saved) {
@@ -228,20 +265,76 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return [{ ...INITIAL_EVENT, isLive: true }];
   });
 
-  const [players, setPlayers] = useState<Player[]>(() => {
+  const [allPlayers, setAllPlayers] = useState<Player[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_players`);
-    return saved ? JSON.parse(saved) : INITIAL_PLAYERS;
+    if (saved) {
+      try {
+        const parsed: Player[] = JSON.parse(saved);
+        return parsed.map(p => ({
+          ...p,
+          eventId: p.eventId || INITIAL_EVENT.id,
+        }));
+      } catch {
+        return INITIAL_PLAYERS;
+      }
+    }
+    return INITIAL_PLAYERS;
   });
 
-  const [categories, setCategories] = useState<Category[]>(() => {
+  const [allCategories, setAllCategories] = useState<Category[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_categories`);
-    return saved ? JSON.parse(saved) : INITIAL_CATEGORIES;
+    if (saved) {
+      try {
+        const parsed: Category[] = JSON.parse(saved);
+        return parsed.map(c => ({
+          ...c,
+          eventId: c.eventId || INITIAL_EVENT.id,
+        }));
+      } catch {
+        return INITIAL_CATEGORIES;
+      }
+    }
+    return INITIAL_CATEGORIES;
   });
 
-  const [brackets, setBrackets] = useState<Bracket[]>(() => {
+  const [allBrackets, setAllBrackets] = useState<Bracket[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_brackets`);
-    return saved ? JSON.parse(saved) : createInitialBrackets();
+    if (saved) {
+      try {
+        const parsed: Bracket[] = JSON.parse(saved);
+        return parsed.map(b => ({
+          ...b,
+          eventId: b.eventId || INITIAL_EVENT.id,
+        }));
+      } catch {
+        return createInitialBrackets();
+      }
+    }
+    return createInitialBrackets();
   });
+
+  // -------------------------------------------------------------------------
+  // EVENT SCOPED DATA:
+  // Ensures that players, categories, and brackets of one tournament championship
+  // (e.g. Women's League) are strictly isolated and visible only within that tournament.
+  // -------------------------------------------------------------------------
+  const players = React.useMemo(() => {
+    return allPlayers.filter(
+      p => p.eventId === event.id || (!p.eventId && (event.id === INITIAL_EVENT.id || events.length <= 1))
+    );
+  }, [allPlayers, event.id, events.length]);
+
+  const categories = React.useMemo(() => {
+    return allCategories.filter(
+      c => c.eventId === event.id || (!c.eventId && (event.id === INITIAL_EVENT.id || events.length <= 1))
+    );
+  }, [allCategories, event.id, events.length]);
+
+  const brackets = React.useMemo(() => {
+    return allBrackets.filter(
+      b => b.eventId === event.id || (!b.eventId && (event.id === INITIAL_EVENT.id || events.length <= 1))
+    );
+  }, [allBrackets, event.id, events.length]);
 
   const [users, setUsers] = useState<User[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_users`);
@@ -306,16 +399,16 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, [weightCategories]);
 
   useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_players`, JSON.stringify(players));
-  }, [players]);
+    localStorage.setItem(`${STORAGE_KEY}_players`, JSON.stringify(allPlayers));
+  }, [allPlayers]);
 
   useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_categories`, JSON.stringify(categories));
-  }, [categories]);
+    localStorage.setItem(`${STORAGE_KEY}_categories`, JSON.stringify(allCategories));
+  }, [allCategories]);
 
   useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_brackets`, JSON.stringify(brackets));
-  }, [brackets]);
+    localStorage.setItem(`${STORAGE_KEY}_brackets`, JSON.stringify(allBrackets));
+  }, [allBrackets]);
 
   useEffect(() => {
     localStorage.setItem(`${STORAGE_KEY}_users`, JSON.stringify(users));
@@ -324,6 +417,72 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   useEffect(() => {
     localStorage.setItem(`${STORAGE_KEY}_audit`, JSON.stringify(auditLogs));
   }, [auditLogs]);
+
+  // Cloud Firestore Persistence with Quota Protection & 1500ms Debouncing
+  useEffect(() => {
+    if (isFirestoreQuotaExceeded()) return;
+    initializeCloudDataIfEmpty({
+      event,
+      events,
+      players: allPlayers,
+      categories: allCategories,
+      brackets: allBrackets,
+      users,
+      auditLogs,
+      ageCategories,
+      weightCategories,
+    }).catch(console.warn);
+  }, []);
+
+  useEffect(() => {
+    if (isFirestoreQuotaExceeded()) return;
+    const timer = setTimeout(() => {
+      if (!isFirestoreQuotaExceeded()) {
+        persistCloudPlayers(allPlayers).catch(console.warn);
+      }
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [allPlayers]);
+
+  useEffect(() => {
+    if (isFirestoreQuotaExceeded()) return;
+    const timer = setTimeout(() => {
+      if (!isFirestoreQuotaExceeded()) {
+        persistCloudCategories(allCategories).catch(console.warn);
+      }
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [allCategories]);
+
+  useEffect(() => {
+    if (isFirestoreQuotaExceeded()) return;
+    const timer = setTimeout(() => {
+      if (!isFirestoreQuotaExceeded()) {
+        persistCloudBrackets(allBrackets).catch(console.warn);
+      }
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [allBrackets]);
+
+  useEffect(() => {
+    if (isFirestoreQuotaExceeded()) return;
+    const timer = setTimeout(() => {
+      if (!isFirestoreQuotaExceeded()) {
+        persistCloudEventsList(events).catch(console.warn);
+      }
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [events]);
+
+  useEffect(() => {
+    if (isFirestoreQuotaExceeded()) return;
+    const timer = setTimeout(() => {
+      if (!isFirestoreQuotaExceeded()) {
+        persistCloudActiveEvent(event).catch(console.warn);
+      }
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [event]);
 
   // ----------------------------------------------------
   // SUPABASE BACKEND INTEGRATION & REALTIME SYNC
@@ -354,14 +513,14 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 setWeightCategoriesState(pullRes.data.weightCategories);
               }
               if (pullRes.data.players && pullRes.data.players.length > 0) {
-                setPlayers(pullRes.data.players);
-              } else if (players.length > 0) {
+                setAllPlayers(pullRes.data.players);
+              } else if (allPlayers.length > 0) {
                 // If Supabase has no players yet, seed initial tournament roster to Supabase
                 pushAllDataToSupabase({
                   events,
-                  players,
-                  categories,
-                  brackets,
+                  players: allPlayers,
+                  categories: allCategories,
+                  brackets: allBrackets,
                   users,
                   auditLogs,
                   ageCategories,
@@ -369,10 +528,10 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 });
               }
               if (pullRes.data.categories && pullRes.data.categories.length > 0) {
-                setCategories(pullRes.data.categories);
+                setAllCategories(pullRes.data.categories);
               }
               if (pullRes.data.brackets && pullRes.data.brackets.length > 0) {
-                setBrackets(pullRes.data.brackets);
+                setAllBrackets(pullRes.data.brackets);
               }
               if (pullRes.data.users && pullRes.data.users.length > 0) {
                 setUsers(pullRes.data.users);
@@ -396,12 +555,12 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       if (eventType === 'DELETE') {
         if (!targetId) return;
         if (table === 'players') {
-          setPlayers(prev => prev.filter(p => p.id !== targetId));
+          setAllPlayers(prev => prev.filter(p => p.id !== targetId));
         } else if (table === 'categories') {
-          setCategories(prev => prev.filter(c => c.id !== targetId));
-          setBrackets(prev => prev.filter(b => b.categoryId !== targetId));
+          setAllCategories(prev => prev.filter(c => c.id !== targetId));
+          setAllBrackets(prev => prev.filter(b => b.categoryId !== targetId));
         } else if (table === 'brackets') {
-          setBrackets(prev => prev.filter(b => b.id !== targetId));
+          setAllBrackets(prev => prev.filter(b => b.id !== targetId));
         } else if (table === 'events') {
           setEvents(prev => prev.filter(e => e.id !== targetId));
         } else if (table === 'tournament_users') {
@@ -418,7 +577,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
       if (table === 'brackets') {
         const b = mapRowToBracket(newRecord);
-        setBrackets(prev => {
+        setAllBrackets(prev => {
           const idx = prev.findIndex(item => item.id === b.id);
           if (idx >= 0) return prev.map(item => (item.id === b.id ? b : item));
           return [...prev, b];
@@ -433,14 +592,14 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setEvent(prev => (prev.id === e.id ? e : prev));
       } else if (table === 'players') {
         const p = mapRowToPlayer(newRecord);
-        setPlayers(prev => {
+        setAllPlayers(prev => {
           const idx = prev.findIndex(item => item.id === p.id);
           if (idx >= 0) return prev.map(item => (item.id === p.id ? p : item));
           return [p, ...prev];
         });
       } else if (table === 'categories') {
         const c = mapRowToCategory(newRecord);
-        setCategories(prev => {
+        setAllCategories(prev => {
           const idx = prev.findIndex(item => item.id === c.id);
           if (idx >= 0) return prev.map(item => (item.id === c.id ? c : item));
           return [...prev, c];
@@ -476,22 +635,22 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   // Real-time debounced auto-sync for live bracket scoring events
   useEffect(() => {
-    if (supabaseStatus !== 'connected' || brackets.length === 0) return;
+    if (supabaseStatus !== 'connected' || allBrackets.length === 0) return;
     const timer = setTimeout(() => {
-      brackets.forEach(b => {
+      allBrackets.forEach(b => {
         supabaseUpsertBracket(b);
       });
     }, 500);
     return () => clearTimeout(timer);
-  }, [brackets, supabaseStatus]);
+  }, [allBrackets, supabaseStatus]);
 
   // Sync all current state to Supabase
   const syncToSupabase = async (): Promise<{ success: boolean; message: string }> => {
     const res = await pushAllDataToSupabase({
       events,
-      players,
-      categories,
-      brackets,
+      players: allPlayers,
+      categories: allCategories,
+      brackets: allBrackets,
       users,
       auditLogs,
       ageCategories,
@@ -513,9 +672,9 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         const matched = res.data.events.find(e => e.id === currentId) || res.data.events[0];
         setEvent(matched);
       }
-      if (res.data.players) setPlayers(res.data.players);
-      if (res.data.categories) setCategories(res.data.categories);
-      if (res.data.brackets) setBrackets(res.data.brackets);
+      if (res.data.players) setAllPlayers(res.data.players);
+      if (res.data.categories) setAllCategories(res.data.categories);
+      if (res.data.brackets) setAllBrackets(res.data.brackets);
       if (res.data.users) setUsers(res.data.users);
       if (res.data.auditLogs) setAuditLogs(res.data.auditLogs);
       if (res.data.ageCategories) setAgeCategoriesState(res.data.ageCategories);
@@ -645,24 +804,16 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     supabaseUpsertEvent(nextEvent);
 
     if (clearExistingRoster) {
-      setPlayers([]);
-      setCategories([]);
-      setBrackets([]);
-      supabaseClearPlayers();
-      supabaseClearCategories();
-      supabaseClearBrackets();
-      addAuditLog(
-        'EVENT_SETUP',
-        nextEvent.name || 'New Championship',
-        `Super Admin initialized fresh event ${newId} (status: ${isLive ? 'LIVE' : 'NOT ACTIVE'}, roster and fixtures reset)`
-      );
-    } else {
-      addAuditLog(
-        'EVENT_SETUP',
-        nextEvent.name || 'Tournament Event',
-        `Super Admin created championship event ${newId} (status: ${isLive ? 'LIVE' : 'NOT ACTIVE'})`
-      );
+      setAllPlayers(prev => prev.filter(p => p.eventId !== newId));
+      setAllCategories(prev => prev.filter(c => c.eventId !== newId));
+      setAllBrackets(prev => prev.filter(b => b.eventId !== newId));
     }
+
+    addAuditLog(
+      'EVENT_SETUP',
+      nextEvent.name || 'New Championship',
+      `Super Admin created fresh championship event "${nextEvent.name}" (${newId}) with isolated athlete roster and fixtures (status: ${isLive ? 'LIVE' : 'NOT ACTIVE'})`
+    );
     return nextEvent;
   };
 
@@ -737,6 +888,26 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       return { success: false, error: 'Championship event not found.' };
     }
 
+    // Helper to determine if an entity belongs to this target event
+    const belongsToEvent = (itemEventId?: string) => {
+      if (itemEventId === eventId) return true;
+      if (!itemEventId && (eventId === INITIAL_EVENT.id || events.length <= 1)) return true;
+      return false;
+    };
+
+    // 1. Purge all registered athletes belonging to this event
+    const deletedPlayers = allPlayers.filter(p => belongsToEvent(p.eventId));
+    setAllPlayers(prev => prev.filter(p => !belongsToEvent(p.eventId)));
+
+    // 2. Purge all category divisions belonging to this event
+    const deletedCategories = allCategories.filter(c => belongsToEvent(c.eventId));
+    setAllCategories(prev => prev.filter(c => !belongsToEvent(c.eventId)));
+
+    // 3. Purge all knockout fixture brackets belonging to this event
+    const deletedBrackets = allBrackets.filter(b => belongsToEvent(b.eventId));
+    setAllBrackets(prev => prev.filter(b => !belongsToEvent(b.eventId)));
+
+    // 4. Update events registry list
     const remaining = events.filter(e => e.id !== eventId);
     if (remaining.length === 0) {
       const fallbackEvent: EventSetup = {
@@ -756,9 +927,25 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }
     }
 
+    // 5. Cloud database cascading deletions
     supabaseDeleteEvent(eventId);
-    addAuditLog('EVENT_DELETE', target.name || eventId, `Super Admin deleted championship event: ${target.name} (${eventId})`);
-    return { success: true };
+    deletedPlayers.forEach(p => supabaseDeletePlayer(p.id));
+    deletedCategories.forEach(c => supabaseDeleteCategory(c.id));
+    deletedBrackets.forEach(b => supabaseDeleteBracket(b.id));
+
+    // 6. Security Audit Log entry
+    addAuditLog(
+      'EVENT_DELETE',
+      target.name || eventId,
+      `Super Admin deleted championship event "${target.name}" (${eventId}) and purged all associated data: ${deletedPlayers.length} registered athletes, ${deletedCategories.length} categories, and ${deletedBrackets.length} fixture brackets.`
+    );
+
+    return {
+      success: true,
+      deletedPlayersCount: deletedPlayers.length,
+      deletedCategoriesCount: deletedCategories.length,
+      deletedBracketsCount: deletedBrackets.length,
+    };
   };
 
   const isEventLive = Boolean(event.isLive);
@@ -868,24 +1055,25 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       return { success: false, error: 'General view cannot add players.' };
     }
 
-    // Check duplicate registration or duplicate aadhar
+    // Check duplicate registration or duplicate aadhar within this championship event
     const existing = players.find(
       p => p.registrationNumber.toLowerCase() === playerData.registrationNumber.toLowerCase() ||
            (p.aadharNumber && p.aadharNumber === playerData.aadharNumber)
     );
     if (existing) {
-      return { success: false, error: 'Player with this Registration ID or Aadhar number already exists.' };
+      return { success: false, error: 'Player with this Registration ID or Aadhar number already exists in this championship.' };
     }
 
     const newPlayer: Player = {
       ...playerData,
       id: `p-${Date.now()}`,
+      eventId: event.id,
       createdAt: new Date().toISOString(),
     };
 
-    setPlayers(prev => [newPlayer, ...prev]);
+    setAllPlayers(prev => [newPlayer, ...prev]);
     supabaseUpsertPlayer(newPlayer);
-    addAuditLog('CREATE', `Player: ${newPlayer.name}`, `Reg #${newPlayer.registrationNumber}, Club: ${newPlayer.clubSchool}, Weight: ${newPlayer.weightKg}kg`);
+    addAuditLog('CREATE', `Player: ${newPlayer.name}`, `Reg #${newPlayer.registrationNumber}, Club: ${newPlayer.clubSchool}, Weight: ${newPlayer.weightKg}kg in event ${event.name}`);
     return { success: true, player: newPlayer };
   };
 
@@ -893,11 +1081,11 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (role === 'general_view') {
       return { success: false, error: 'General view cannot edit players.' };
     }
-    const target = players.find(p => p.id === id);
+    const target = allPlayers.find(p => p.id === id);
     if (!target) return { success: false, error: 'Player not found.' };
 
-    const updatedPlayer = { ...target, ...playerData };
-    setPlayers(prev => prev.map(p => (p.id === id ? updatedPlayer : p)));
+    const updatedPlayer = { ...target, ...playerData, eventId: target.eventId || event.id };
+    setAllPlayers(prev => prev.map(p => (p.id === id ? updatedPlayer : p)));
     supabaseUpsertPlayer(updatedPlayer);
     addAuditLog('UPDATE', `Player: ${target.name}`, `Updated details: ${Object.keys(playerData).join(', ')}`);
     return { success: true };
@@ -908,10 +1096,17 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (role !== 'super_admin') {
       return { success: false, error: 'Permission denied: Only Super Admin is permitted to delete player records.' };
     }
-    const target = players.find(p => p.id === id);
+    const target = allPlayers.find(p => p.id === id);
     if (!target) return { success: false, error: 'Player not found.' };
 
-    setPlayers(prev => prev.filter(p => p.id !== id));
+    setAllPlayers(prev => prev.filter(p => p.id !== id));
+    // Also remove player from any category eligible lists
+    setAllCategories(prev =>
+      prev.map(c => ({
+        ...c,
+        eligiblePlayerIds: c.eligiblePlayerIds.filter(pid => pid !== id),
+      }))
+    );
     supabaseDeletePlayer(id);
     addAuditLog('DELETE', `Player: ${target.name}`, `Reg #${target.registrationNumber} deleted permanently by Super Admin.`);
     return { success: true };
@@ -946,23 +1141,24 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       validNewPlayers.push({
         ...p,
         id: `p-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+        eventId: event.id,
         createdAt: new Date().toISOString(),
       });
       added++;
     });
 
     if (replace) {
-      setPlayers(validNewPlayers);
+      setAllPlayers(prev => [...prev.filter(p => p.eventId !== event.id), ...validNewPlayers]);
       supabaseClearPlayers().then(() => supabaseBulkUpsertPlayers(validNewPlayers));
     } else {
-      setPlayers(prev => [...validNewPlayers, ...prev]);
+      setAllPlayers(prev => [...validNewPlayers, ...prev]);
       supabaseBulkUpsertPlayers(validNewPlayers);
     }
 
     addAuditLog(
       'CREATE',
       'Bulk Athlete Import',
-      `Imported ${added} athletes (${duplicates} duplicate registrations skipped)`
+      `Imported ${added} athletes to ${event.name} (${duplicates} duplicate registrations skipped)`
     );
 
     return { added, duplicates };
@@ -970,27 +1166,27 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const clearAllPlayers = () => {
     if (role !== 'super_admin') return;
-    setPlayers([]);
-    setCategories([]);
-    setBrackets([]);
+    setAllPlayers(prev => prev.filter(p => p.eventId !== event.id));
+    setAllCategories(prev => prev.filter(c => c.eventId !== event.id));
+    setAllBrackets(prev => prev.filter(b => b.eventId !== event.id));
     supabaseClearPlayers();
     supabaseClearCategories();
     supabaseClearBrackets();
-    addAuditLog('DELETE', 'All Athletes', 'Super Admin cleared player database and related fixtures');
+    addAuditLog('DELETE', `All Athletes (${event.name})`, 'Super Admin cleared player database and related fixtures for active event');
   };
 
   const clearAllCategoriesAndBrackets = () => {
     if (role !== 'super_admin' && role !== 'admin') return;
-    setCategories([]);
-    setBrackets([]);
+    setAllCategories(prev => prev.filter(c => c.eventId !== event.id));
+    setAllBrackets(prev => prev.filter(b => b.eventId !== event.id));
     supabaseClearCategories();
     supabaseClearBrackets();
-    addAuditLog('DELETE', 'Categories & Fixtures', 'Super Admin cleared all divisions and tournament brackets');
+    addAuditLog('DELETE', `Categories & Fixtures (${event.name})`, 'Super Admin cleared divisions and tournament brackets for active event');
   };
 
   // Category operations
   const createCategory = (catData: Omit<Category, 'id' | 'isLocked' | 'eligiblePlayerIds'>): Category => {
-    // Automatically query eligible players
+    // Automatically query eligible players from current event players ONLY
     const ageCat = ageCategories.find(a => a.id === catData.ageCategoryId);
     const weightCat = weightCategories.find(w => w.id === catData.weightCategoryId);
 
@@ -1014,19 +1210,20 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const newCategory: Category = {
       ...catData,
       id: `cat-${Date.now()}`,
+      eventId: event.id,
       isLocked: false,
       eligiblePlayerIds: eligible.map(e => e.id),
     };
 
-    setCategories(prev => [...prev, newCategory]);
+    setAllCategories(prev => [...prev, newCategory]);
     supabaseUpsertCategory(newCategory);
-    addAuditLog('CREATE', `Category: ${newCategory.name}`, `Created with ${eligible.length} matched eligible fighters.`);
+    addAuditLog('CREATE', `Category: ${newCategory.name}`, `Created in ${event.name} with ${eligible.length} matched eligible fighters.`);
     return newCategory;
   };
 
   const lockCategory = (categoryId: string) => {
     if (role === 'general_view') return;
-    setCategories(prev =>
+    setAllCategories(prev =>
       prev.map(c => {
         if (c.id === categoryId) {
           const mod = {
@@ -1046,7 +1243,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const unlockCategory = (categoryId: string) => {
     if (role !== 'super_admin' && role !== 'admin') return;
-    setCategories(prev =>
+    setAllCategories(prev =>
       prev.map(c => {
         if (c.id === categoryId) {
           const mod = {
@@ -1068,12 +1265,12 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (role !== 'super_admin') {
       return { success: false, error: 'Permission denied: Only Super Admin can delete categories.' };
     }
-    const cat = categories.find(c => c.id === categoryId);
+    const cat = allCategories.find(c => c.id === categoryId);
     if (!cat) return { success: false, error: 'Category not found.' };
 
-    const assocBrackets = brackets.filter(b => b.categoryId === categoryId);
-    setCategories(prev => prev.filter(c => c.id !== categoryId));
-    setBrackets(prev => prev.filter(b => b.categoryId !== categoryId));
+    const assocBrackets = allBrackets.filter(b => b.categoryId === categoryId);
+    setAllCategories(prev => prev.filter(c => c.id !== categoryId));
+    setAllBrackets(prev => prev.filter(b => b.categoryId !== categoryId));
     
     supabaseDeleteCategory(categoryId);
     assocBrackets.forEach(b => supabaseDeleteBracket(b.id));
@@ -1089,7 +1286,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
 
     const cat = categories.find(c => c.id === categoryId);
-    if (!cat) return { success: false, error: 'Category not found.' };
+    if (!cat) return { success: false, error: 'Category not found in active championship event.' };
 
     const catPlayers = players.filter(p => cat.eligiblePlayerIds.includes(p.id));
     if (catPlayers.length < 2) {
@@ -1098,8 +1295,9 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     try {
       const bracket = generateKnockoutBracket(catPlayers, cat, event, randomize);
+      bracket.eventId = event.id;
       
-      setBrackets(prev => {
+      setAllBrackets(prev => {
         const filtered = prev.filter(b => b.categoryId !== categoryId);
         return [...filtered, bracket];
       });
@@ -1108,7 +1306,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       addAuditLog(
         'BRACKET_GENERATE',
         `Category: ${cat.name}`,
-        `Generated ${bracket.rounds.length}-round single-elimination tree (${catPlayers.length} competitors) with automatic BYE routing.`
+        `Generated ${bracket.rounds.length}-round single-elimination tree (${catPlayers.length} competitors) for ${event.name} with automatic BYE routing.`
       );
 
       return { success: true, bracket };
@@ -1129,7 +1327,8 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const catPlayers = players.filter(p => cat.eligiblePlayerIds.includes(p.id));
     try {
       const bracket = generateKnockoutBracket(catPlayers, cat, event, true);
-      setBrackets(prev => {
+      bracket.eventId = event.id;
+      setAllBrackets(prev => {
         const filtered = prev.filter(b => b.categoryId !== categoryId);
         return [...filtered, bracket];
       });
@@ -1158,7 +1357,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       timestamp: Date.now(),
     };
 
-    setBrackets(prev =>
+    setAllBrackets(prev =>
       prev.map(b => ({
         ...b,
         rounds: b.rounds.map(round => ({
@@ -1200,7 +1399,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const updateBoutRoundScore = (boutId: string, roundNumber: number, redDelta: number, blueDelta: number) => {
     if (role === 'general_view') return;
 
-    setBrackets(prev =>
+    setAllBrackets(prev =>
       prev.map(b => ({
         ...b,
         rounds: b.rounds.map(round => ({
@@ -1233,7 +1432,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const recordBoutExit = (boutId: string, roundNumber: number, corner: 'red' | 'blue') => {
     if (role === 'general_view') return;
 
-    setBrackets(prev =>
+    setAllBrackets(prev =>
       prev.map(b => ({
         ...b,
         rounds: b.rounds.map(round => ({
@@ -1286,7 +1485,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const recordBoutWarning = (boutId: string, roundNumber: number, corner: 'red' | 'blue') => {
     if (role === 'general_view') return;
 
-    setBrackets(prev =>
+    setAllBrackets(prev =>
       prev.map(b => ({
         ...b,
         rounds: b.rounds.map(round => ({
@@ -1377,7 +1576,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       players
     );
 
-    setBrackets(prev => prev.map(b => (b.id === advancedBracket.id ? advancedBracket : b)));
+    setAllBrackets(prev => prev.map(b => (b.id === advancedBracket.id ? advancedBracket : b)));
     supabaseUpsertBracket(advancedBracket);
 
     // Clear active scoring bout or update it
@@ -1417,7 +1616,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
 
     const reopenedBracket = reopenBoutInBracket(targetBracket, boutId, reason);
-    setBrackets(prev => prev.map(b => (b.id === reopenedBracket.id ? reopenedBracket : b)));
+    setAllBrackets(prev => prev.map(b => (b.id === reopenedBracket.id ? reopenedBracket : b)));
     supabaseUpsertBracket(reopenedBracket);
 
     const reopenedBout = findBoutInRounds(reopenedBracket.rounds, boutId);
@@ -1558,9 +1757,9 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     localStorage.removeItem(`${STORAGE_KEY}_audit`);
 
     setEvent(INITIAL_EVENT);
-    setPlayers(INITIAL_PLAYERS);
-    setCategories(INITIAL_CATEGORIES);
-    setBrackets(createInitialBrackets());
+    setAllPlayers(INITIAL_PLAYERS);
+    setAllCategories(INITIAL_CATEGORIES);
+    setAllBrackets(createInitialBrackets());
     setUsers(INITIAL_USERS);
     setAuditLogs(INITIAL_AUDIT_LOGS);
     setActiveBoutForScoring(null);
@@ -1773,6 +1972,9 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   return (
     <TournamentContext.Provider
       value={{
+        firestoreQuotaExceeded: firestoreQuotaExceeded && !quotaAlertDismissed,
+        firestoreQuotaMsg,
+        dismissQuotaAlert,
         supabaseStatus,
         supabaseModalOpen,
         setSupabaseModalOpen,
@@ -1812,18 +2014,21 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         updateWeightCategory,
         deleteWeightCategory,
         resetWeightCategories,
+        allPlayers,
         players,
         addPlayer,
         bulkAddPlayers,
         updatePlayer,
         deletePlayer,
         clearAllPlayers,
+        allCategories,
         categories,
         createCategory,
         lockCategory,
         unlockCategory,
         deleteCategory,
         clearAllCategoriesAndBrackets,
+        allBrackets,
         brackets,
         generateBracketForCategory,
         regenerateBracketForCategory,

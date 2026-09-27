@@ -13,11 +13,14 @@ import {
   Plus,
   ArrowRight,
   ShieldAlert,
+  Trophy,
 } from 'lucide-react';
 
 export const CategoryManager: React.FC = () => {
   const {
     event,
+    events,
+    switchEvent,
     categories,
     players,
     ageCategories,
@@ -134,13 +137,45 @@ export const CategoryManager: React.FC = () => {
   return (
     <div className="space-y-8 pb-12">
       {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold text-white tracking-tight">
-          Category Generation & Eligibility Filter
-        </h1>
-        <p className="text-xs text-slate-400 mt-1">
-          Select tournament parameters to filter eligible registered players, review matched fighters, and lock categories for knockout fixture generation.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-white tracking-tight">
+            Category Generation & Eligibility Filter
+          </h1>
+          <p className="text-xs text-slate-400 mt-1">
+            Select tournament parameters to filter eligible registered players, review matched fighters, and lock categories for knockout fixture generation.
+          </p>
+        </div>
+
+        {events.length > 1 && (
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-slate-400 font-medium">Championship:</span>
+            <select
+              value={event.id}
+              onChange={e => switchEvent(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 font-medium focus:outline-none focus:border-amber-400 cursor-pointer max-w-[200px] truncate"
+            >
+              {events.map(ev => (
+                <option key={ev.id} value={ev.id}>
+                  {ev.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {/* Championship Scope Banner */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-xl px-4 py-3 flex items-center gap-2.5 text-xs">
+        <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+          <Trophy className="w-4 h-4" />
+        </div>
+        <div>
+          <span className="font-bold text-white">{event.name}</span>
+          <span className="text-slate-400 ml-2">
+            · Filtering from <strong className="text-amber-400">{players.length} registered athletes</strong> belonging to this event only.
+          </span>
+        </div>
       </div>
 
       {feedbackMsg && (

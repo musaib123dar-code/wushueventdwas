@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTournament } from '../../context/TournamentContext';
 import { Bracket, Bout, Category } from '../../types/tournament';
 import {
@@ -21,6 +21,9 @@ export const BracketViewer: React.FC = () => {
   const {
     brackets,
     categories,
+    event,
+    events,
+    switchEvent,
     regenerateBracketForCategory,
     reopenBoutResult,
     setActiveBoutForScoring,
@@ -35,6 +38,13 @@ export const BracketViewer: React.FC = () => {
   const [reopenReason, setReopenReason] = useState('');
   const [regenModalOpen, setRegenModalOpen] = useState(false);
   const [regenReason, setRegenReason] = useState('');
+
+  // Keep selected category synchronized when switching championship events
+  useEffect(() => {
+    if (!categories.some(c => c.id === selectedCategoryId)) {
+      setSelectedCategoryId(categories[0]?.id || '');
+    }
+  }, [categories, selectedCategoryId]);
 
   const currentBracket = brackets.find(b => b.categoryId === selectedCategoryId);
   const currentCategory = categories.find(c => c.id === selectedCategoryId);
@@ -74,10 +84,28 @@ export const BracketViewer: React.FC = () => {
       {/* Header & Category Selector Bar */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <GitFork className="w-5 h-5 text-amber-400" />
-            Single-Elimination Knockout Fixtures
-          </h1>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+              <GitFork className="w-5 h-5 text-amber-400" />
+              Single-Elimination Knockout Fixtures
+            </h1>
+            {events.length > 1 && (
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-slate-400 font-medium">Championship:</span>
+                <select
+                  value={event.id}
+                  onChange={e => switchEvent(e.target.value)}
+                  className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1 font-medium focus:outline-none focus:border-amber-400 cursor-pointer max-w-[180px] truncate"
+                >
+                  {events.map(ev => (
+                    <option key={ev.id} value={ev.id}>
+                      {ev.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
           <p className="text-xs text-slate-400 mt-0.5">
             Interactive tree with automatic BYE advancement, live official scoring, and winner progression.
           </p>
@@ -157,13 +185,13 @@ export const BracketViewer: React.FC = () => {
           </div>
 
           {/* Bracket Tree Columns */}
-          <div className="flex items-stretch gap-10 min-w-[960px] pb-6">
+          <div className="flex items-stretch gap-8 sm:gap-10 min-w-max pb-6">
             {currentBracket.rounds.map((round, rIndex) => {
               const isFinalRound = rIndex === currentBracket.rounds.length - 1;
               const matchesCount = round.bouts.length;
 
               return (
-                <div key={round.roundName} className="flex-1 flex flex-col">
+                <div key={`${round.roundName}-${rIndex}`} className="w-56 sm:w-64 shrink-0 flex flex-col">
                   {/* Round Column Title */}
                   <div className="text-center pb-4 mb-4 border-b border-slate-800/60">
                     <div className="text-xs font-bold text-slate-200 uppercase tracking-wider font-cinzel">

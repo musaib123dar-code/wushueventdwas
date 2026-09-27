@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useTournament } from '../../context/TournamentContext';
 import { calculateAge } from '../../utils/tournamentHelpers';
 import {
@@ -19,12 +19,19 @@ import {
 } from 'lucide-react';
 
 export const PublicTournamentView: React.FC = () => {
-  const { event, brackets, categories, players, ageCategories, isLoggedIn, setLoginModalOpen } = useTournament();
+  const { event, events, switchEvent, brackets, categories, players, ageCategories, isLoggedIn, setLoginModalOpen } = useTournament();
 
   const [activeSection, setActiveSection] = useState<'live_queue' | 'brackets' | 'medals' | 'players'>('live_queue');
   const [playerSearch, setPlayerSearch] = useState('');
   const [selectedGender, setSelectedGender] = useState('all');
   const [selectedCatId, setSelectedCatId] = useState<string>(categories[0]?.id || '');
+
+  // Synchronize category selection when championship changes
+  useEffect(() => {
+    if (!categories.some(c => c.id === selectedCatId)) {
+      setSelectedCatId(categories[0]?.id || '');
+    }
+  }, [categories, selectedCatId]);
 
   // Extract all bouts
   const allBouts = useMemo(() => {
@@ -96,7 +103,23 @@ export const PublicTournamentView: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            {events.length > 1 && (
+              <div className="flex items-center gap-1.5 bg-slate-950/80 border border-slate-800 rounded-full px-3 py-1">
+                <span className="text-[11px] text-slate-400">Championship:</span>
+                <select
+                  value={event.id}
+                  onChange={e => switchEvent(e.target.value)}
+                  className="bg-transparent text-slate-200 text-xs font-semibold focus:outline-none cursor-pointer max-w-[160px] truncate"
+                >
+                  {events.map(ev => (
+                    <option key={ev.id} value={ev.id} className="bg-slate-900 text-slate-100">
+                      {ev.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="px-3.5 py-1.5 rounded-full bg-slate-950/80 border border-slate-800 text-xs text-slate-300 font-medium">
               Public Spectator View
             </div>
@@ -351,9 +374,9 @@ export const PublicTournamentView: React.FC = () => {
                 {currentPublicCategory?.name} · Knockout Bracket
               </div>
 
-              <div className="flex items-stretch gap-8 min-w-[850px]">
-                {currentPublicBracket.rounds.map(round => (
-                  <div key={round.roundName} className="flex-1 flex flex-col">
+              <div className="flex items-stretch gap-6 sm:gap-8 min-w-max pb-4">
+                {currentPublicBracket.rounds.map((round, rIdx) => (
+                  <div key={`${round.roundName}-${rIdx}`} className="w-48 sm:w-56 shrink-0 flex flex-col">
                     <div className="text-center font-bold text-slate-300 text-xs pb-3 mb-3 border-b border-slate-800">
                       {round.roundName}
                     </div>

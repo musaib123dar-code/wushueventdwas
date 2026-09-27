@@ -37,13 +37,19 @@ export function formatDate(dateString: string): string {
 /**
  * Determine round names for a bracket based on total rounds
  */
-function getRoundName(roundIndex: number, totalRounds: number): 'Round of 32' | 'Round of 16' | 'Quarterfinal' | 'Semifinal' | 'Final' {
+export function getRoundName(roundIndex: number, totalRounds: number): string {
   const roundsFromEnd = totalRounds - 1 - roundIndex;
   if (roundsFromEnd === 0) return 'Final';
   if (roundsFromEnd === 1) return 'Semifinal';
   if (roundsFromEnd === 2) return 'Quarterfinal';
   if (roundsFromEnd === 3) return 'Round of 16';
-  return 'Round of 32';
+  if (roundsFromEnd === 4) return 'Round of 32';
+  if (roundsFromEnd === 5) return 'Round of 64';
+  if (roundsFromEnd === 6) return 'Round of 128';
+  if (roundsFromEnd === 7) return 'Round of 256';
+  if (roundsFromEnd === 8) return 'Round of 512';
+  const participantsInRound = Math.pow(2, roundsFromEnd + 1);
+  return `Round of ${participantsInRound}`;
 }
 
 /**
@@ -65,13 +71,19 @@ export function generateKnockoutBracket(
     throw new Error('At least 2 players are required to generate a knockout bracket.');
   }
 
-  // Find next power of 2 (2, 4, 8, 16, 32)
+  // Bracket size is always the smallest power of 2 that is greater than or equal to the number of players:
+  // 1–2 -> 2
+  // 3–4 -> 4
+  // 5–8 -> 8
+  // 9–16 -> 16
+  // 17–32 -> 32
+  // 33–64 -> 64
+  // 65–128 -> 128
+  // 129–256 -> 256
+  // 257–512 -> 512
   let bracketSize = 2;
   while (bracketSize < count) {
     bracketSize *= 2;
-  }
-  if (bracketSize > 32) {
-    bracketSize = 32; // cap for standard tournament divisions
   }
 
   const totalRounds = Math.log2(bracketSize);
@@ -81,7 +93,7 @@ export function generateKnockoutBracket(
   // In tournament brackets, byes are seeded at alternating opposite ends (top and bottom)
   const initialSlots: (Player | 'BYE')[] = new Array(bracketSize).fill('BYE');
   
-  // Standard tournament seeding positions for 4, 8, 16, 32
+  // Standard tournament seeding positions for dynamic powers of 2
   const seedOrder = getSeedPositions(bracketSize);
   
   for (let i = 0; i < count; i++) {
@@ -95,7 +107,7 @@ export function generateKnockoutBracket(
   const bracketRounds: Bracket['rounds'] = [];
   let boutCounter = 101; // B-101, B-102...
 
-  // We build from Round 0 (e.g. Round of 16 or Quarterfinal) up to Final
+  // We build from Round 0 (e.g. Round of 128 or Round of 64) up to Final
   for (let r = 0; r < totalRounds; r++) {
     const roundName = getRoundName(r, totalRounds);
     const matchesInRound = bracketSize / Math.pow(2, r + 1);
@@ -120,6 +132,10 @@ export function generateKnockoutBracket(
         nextBoutSlot = m % 2 === 0 ? 'red' : 'blue';
       }
 
+      const matchHour = 9 + Math.floor((m * 15) / 60);
+      const matchMin = (m * 15) % 60;
+      const scheduledTime = `Day ${r + 1} · ${String(matchHour).padStart(2, '0')}:${String(matchMin).padStart(2, '0')}`;
+
       bouts.push({
         id: boutId,
         eventId: event.id,
@@ -135,7 +151,7 @@ export function generateKnockoutBracket(
         isBye: false,
         status: 'scheduled',
         ring: event.rings[m % event.rings.length] || 'Leitai 1',
-        scheduledTime: `Day ${r + 1} · 10:${String((m * 15) % 60).padStart(2, '0')}`,
+        scheduledTime,
         rounds: initialRounds,
         currentRound: 1,
         scoreEvents: [],
@@ -223,20 +239,28 @@ export function generateKnockoutBracket(
 }
 
 /**
- * Standard seeding positions for bracket allocation
+ * Standard tournament seeding positions for bracket allocation across any power of 2
+ * Recursively pairs each seed with (nextSize - 1 - seed) so top seeds are on opposite halves
+ * and BYEs (unassigned trailing seeds) are balanced symmetrically.
  */
-function getSeedPositions(size: number): number[] {
-  if (size === 2) return [0, 1];
-  if (size === 4) return [0, 3, 1, 2];
-  if (size === 8) return [0, 7, 3, 4, 1, 6, 2, 5];
-  if (size === 16) return [0, 15, 7, 8, 3, 12, 4, 11, 1, 14, 6, 9, 2, 13, 5, 10];
-  if (size === 32) {
-    return [
-      0, 31, 15, 16, 7, 24, 8, 23, 3, 28, 12, 19, 4, 27, 11, 20,
-      1, 30, 14, 17, 6, 25, 9, 22, 2, 29, 13, 18, 5, 26, 10, 21
-    ];
+export function getSeedPositions(size: number): number[] {
+  if (size <= 1) return [0];
+  let current: number[] = [0, 1];
+  let currentSize = 2;
+
+  while (currentSize < size) {
+    const nextSize = currentSize * 2;
+    const next: number[] = [];
+    for (let i = 0; i < current.length; i++) {
+      const val = current[i];
+      next.push(val);
+      next.push(nextSize - 1 - val);
+    }
+    current = next;
+    currentSize = nextSize;
   }
-  return Array.from({ length: size }, (_, i) => i);
+
+  return current;
 }
 
 /**

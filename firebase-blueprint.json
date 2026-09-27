@@ -78,6 +78,7 @@
       "type": "object",
       "properties": {
         "id": { "type": "string" },
+        "eventId": { "type": "string" },
         "name": { "type": "string" },
         "ageCategory": { "type": "string" },
         "minAge": { "type": "number" },
@@ -98,6 +99,7 @@
       "properties": {
         "id": { "type": "string" },
         "categoryId": { "type": "string" },
+        "eventId": { "type": "string" },
         "categoryName": { "type": "string" },
         "totalParticipants": { "type": "number" },
         "rounds": { "type": "array" },

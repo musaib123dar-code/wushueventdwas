@@ -58,9 +58,12 @@ export const MasterAdminPanel: React.FC = () => {
     deleteWeightCategory,
     resetWeightCategories,
     players,
+    allPlayers,
     clearAllPlayers,
     categories,
+    allCategories,
     brackets,
+    allBrackets,
     clearAllCategoriesAndBrackets,
     exportMasterExcelBackup,
     importMasterWorkbook,
@@ -1604,6 +1607,22 @@ export const MasterAdminPanel: React.FC = () => {
                     ))}
                   </div>
 
+                  {/* Event Scoped Athlete & Category Statistics */}
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="p-2 bg-slate-950/60 rounded-lg border border-slate-800/80 flex items-center justify-between">
+                      <span className="text-[11px] text-slate-400">Athletes Registered:</span>
+                      <span className="font-mono font-bold text-white">
+                        {allPlayers.filter(p => p.eventId === ev.id || (!p.eventId && events.length <= 1)).length}
+                      </span>
+                    </div>
+                    <div className="p-2 bg-slate-950/60 rounded-lg border border-slate-800/80 flex items-center justify-between">
+                      <span className="text-[11px] text-slate-400">Category Divisions:</span>
+                      <span className="font-mono font-bold text-amber-400">
+                        {allCategories.filter(c => c.eventId === ev.id || (!c.eventId && events.length <= 1)).length}
+                      </span>
+                    </div>
+                  </div>
+
                   {/* Action Buttons Row */}
                   <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2">
                     {/* Live / Inactive Toggle */}
@@ -1915,6 +1934,28 @@ export const MasterAdminPanel: React.FC = () => {
               Are you sure you want to permanently delete the championship tournament:{' '}
               <strong className="text-white">"{deleteEventTarget.name || 'Untitled Event'}"</strong>?
             </p>
+
+            <div className="p-3.5 bg-rose-950/40 border border-rose-900/50 rounded-xl space-y-2 text-xs text-rose-200">
+              <div className="font-bold flex items-center gap-1.5 text-rose-300">
+                <AlertTriangle className="w-4 h-4 text-rose-400" />
+                All event data will be permanently wiped:
+              </div>
+              <ul className="list-disc pl-5 space-y-1 text-slate-300 text-[11px]">
+                <li>
+                  <strong className="text-rose-300">
+                    {allPlayers.filter(p => p.eventId === deleteEventTarget.id || (!p.eventId && events.length <= 1)).length} Registered Athletes
+                  </strong>{' '}
+                  registered for this championship will be permanently purged.
+                </li>
+                <li>
+                  <strong className="text-rose-300">
+                    {allCategories.filter(c => c.eventId === deleteEventTarget.id || (!c.eventId && events.length <= 1)).length} Category Divisions
+                  </strong>{' '}
+                  and associated bout draw records will be deleted.
+                </li>
+                <li>All knockout fixture trees and live scoring bouts will be deleted.</li>
+              </ul>
+            </div>
 
             {deleteEventTarget.id === event.id && (
               <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-300 space-y-1">

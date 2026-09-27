@@ -17,6 +17,7 @@ import {
   X,
   FileSpreadsheet,
   ShieldAlert,
+  Trophy,
 } from 'lucide-react';
 
 export const PlayerRegistry: React.FC = () => {
@@ -26,6 +27,8 @@ export const PlayerRegistry: React.FC = () => {
     updatePlayer,
     deletePlayer,
     event,
+    events,
+    switchEvent,
     role,
     ageCategories,
     weightCategories,
@@ -221,6 +224,41 @@ export const PlayerRegistry: React.FC = () => {
             </>
           )}
         </div>
+      </div>
+
+      {/* Championship Event Scope Indicator */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+            <Trophy className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">Current Championship Roster:</span>
+              <span className="font-bold text-white">{event.name}</span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Athletes registered here are strictly isolated to this tournament. Players registered in other events will not appear.
+            </p>
+          </div>
+        </div>
+
+        {events.length > 1 && (
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[11px] text-slate-400">Switch Event:</span>
+            <select
+              value={event.id}
+              onChange={e => switchEvent(e.target.value)}
+              className="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 font-medium focus:outline-none focus:border-amber-400 cursor-pointer max-w-[200px] truncate"
+            >
+              {events.map(ev => (
+                <option key={ev.id} value={ev.id}>
+                  {ev.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* Filter and Search Bar */}

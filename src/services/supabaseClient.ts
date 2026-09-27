@@ -211,6 +211,7 @@ export function mapRowToEvent(r: any): EventSetup {
 export function mapPlayerToRow(p: Player) {
   return {
     id: p.id,
+    event_id: p.eventId || null,
     registration_number: p.registrationNumber,
     name: p.name,
     father_name: p.fatherName,
@@ -230,6 +231,7 @@ export function mapPlayerToRow(p: Player) {
 export function mapRowToPlayer(r: any): Player {
   return {
     id: r.id,
+    eventId: r.event_id || undefined,
     registrationNumber: r.registration_number || r.id,
     name: r.name,
     fatherName: r.father_name || '',

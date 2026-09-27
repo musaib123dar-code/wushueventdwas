@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS public.weight_categories (
 -- 5. Players / Athletes Registry Table
 CREATE TABLE IF NOT EXISTS public.players (
   id TEXT PRIMARY KEY,
+  event_id TEXT,
   registration_number TEXT,
   name TEXT NOT NULL,
   father_name TEXT,

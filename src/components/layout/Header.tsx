@@ -34,6 +34,8 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu }) => {
     logout,
     setLoginModalOpen,
     event,
+    events,
+    switchEvent,
     currentUser,
     setActiveTab,
     activeTab,
@@ -83,7 +85,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu }) => {
                 WUSHU SANDA ARENA
               </span>
               <div className="text-[11px] text-slate-400 font-medium hidden sm:flex items-center gap-2">
-                <span className="truncate max-w-[200px]">{event.name || 'Wushu Championship'}</span>
+                <span className="truncate max-w-[180px]" title={event.name}>{event.name || 'Wushu Championship'}</span>
                 <span aria-hidden="true" className="text-slate-600">·</span>
                 {event.isLive ? (
                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
@@ -101,6 +103,25 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu }) => {
               </div>
             </div>
           </button>
+
+          {/* Quick Championship Switcher (if multiple events exist) */}
+          {events.length > 1 && (
+            <div className="hidden xl:flex items-center gap-1.5 pl-2 border-l border-slate-800">
+              <span className="text-[11px] text-slate-400 font-medium">Championship:</span>
+              <select
+                value={event.id}
+                onChange={e => switchEvent(e.target.value)}
+                className="bg-slate-900 border border-slate-700 hover:border-amber-500/50 text-slate-200 text-xs rounded-lg px-2.5 py-1 max-w-[200px] truncate focus:outline-none focus:ring-1 focus:ring-amber-500 font-semibold cursor-pointer transition-colors"
+                title="Switch Active Championship Tournament Workspace"
+              >
+                {events.map(ev => (
+                  <option key={ev.id} value={ev.id}>
+                    {ev.name} {ev.isLive ? '● Live' : '○ Draft'}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Zone 2: Clean text navigation links */}

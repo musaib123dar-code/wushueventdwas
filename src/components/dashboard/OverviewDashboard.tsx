@@ -23,6 +23,8 @@ import { calculateAge, findBoutInRounds } from '../../utils/tournamentHelpers';
 export const OverviewDashboard: React.FC = () => {
   const {
     event,
+    events,
+    switchEvent,
     players,
     categories,
     brackets,
@@ -96,7 +98,23 @@ export const OverviewDashboard: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-3 shrink-0">
+            {events.length > 1 && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400 font-medium">Championship:</span>
+                <select
+                  value={event.id}
+                  onChange={e => switchEvent(e.target.value)}
+                  className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-xl px-3 py-2 font-medium focus:outline-none focus:border-amber-400 cursor-pointer max-w-[200px] truncate"
+                >
+                  {events.map(ev => (
+                    <option key={ev.id} value={ev.id}>
+                      {ev.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             {role !== 'general_view' && (
               <button
                 onClick={() => setActiveTab('players')}
