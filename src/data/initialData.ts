@@ -12,25 +12,25 @@ import {
 const today = new Date().toISOString().split('T')[0];
 
 export const INITIAL_EVENT: EventSetup = {
-  id: 'event-live-01',
-  name: '34th State Senior & Junior Wushu Championship 2026',
-  organizer: 'Wushu Association of India',
-  venue: 'Indira Gandhi Indoor Stadium, Platform Arena',
-  city: 'New Delhi',
-  state: 'Delhi',
+  id: 'event-official-01',
+  name: 'Official State & National Wushu Sanda Championship 2026',
+  organizer: 'Wushu Association',
+  venue: 'Main Indoor Sports Arena, Platform Hall',
+  city: 'Tournament City',
+  state: 'State/Province',
   startDate: today,
   endDate: today,
-  tournamentReferenceDate: today, // Age eligibility strictly computed against this date
+  tournamentReferenceDate: today, // Age eligibility computed against this date
   status: 'ongoing',
   isLive: true,
   createdAt: new Date().toISOString(),
   competitionType: 'Sanda',
-  roundDurationSec: 120, // 2 minutes per round
+  roundDurationSec: 120, // 2 minutes per round (IWUF Official)
   roundsCount: 3, // best 2 of 3
   numberOfRounds: 3,
   restDurationSec: 60, // 1 minute rest
   rings: ['Leitai 1 (Platform A)', 'Leitai 2 (Platform B)'],
-  description: 'Official State Sanda Championship',
+  description: 'Official Wushu Sanda Championship & Knockout Tournament',
 };
 
 export const INITIAL_AGE_CATEGORIES: AgeCategory[] = [
@@ -42,20 +42,25 @@ export const INITIAL_AGE_CATEGORIES: AgeCategory[] = [
 
 export const INITIAL_WEIGHT_CATEGORIES: WeightCategory[] = [
   // Male Sanda divisions (IWUF official rules)
-  { id: 'wt-m-48', name: 'Under 48 kg', minWeightKg: 44, maxWeightKg: 48, gender: 'male' },
-  { id: 'wt-m-52', name: 'Under 52 kg', minWeightKg: 48.1, maxWeightKg: 52, gender: 'male' },
-  { id: 'wt-m-56', name: 'Under 56 kg', minWeightKg: 52.1, maxWeightKg: 56, gender: 'male' },
-  { id: 'wt-m-60', name: 'Under 60 kg', minWeightKg: 56.1, maxWeightKg: 60, gender: 'male' },
-  { id: 'wt-m-65', name: 'Under 65 kg', minWeightKg: 60.1, maxWeightKg: 65, gender: 'male' },
-  { id: 'wt-m-70', name: 'Under 70 kg', minWeightKg: 65.1, maxWeightKg: 70, gender: 'male' },
-  { id: 'wt-m-75', name: 'Under 75 kg', minWeightKg: 70.1, maxWeightKg: 75, gender: 'male' },
-  { id: 'wt-m-80', name: 'Under 80 kg', minWeightKg: 75.1, maxWeightKg: 80, gender: 'male' },
+  { id: 'wt-m-48', name: 'Male Under 48 kg', minWeightKg: 44, maxWeightKg: 48, gender: 'male' },
+  { id: 'wt-m-52', name: 'Male Under 52 kg', minWeightKg: 48.1, maxWeightKg: 52, gender: 'male' },
+  { id: 'wt-m-56', name: 'Male Under 56 kg', minWeightKg: 52.1, maxWeightKg: 56, gender: 'male' },
+  { id: 'wt-m-60', name: 'Male Under 60 kg', minWeightKg: 56.1, maxWeightKg: 60, gender: 'male' },
+  { id: 'wt-m-65', name: 'Male Under 65 kg', minWeightKg: 60.1, maxWeightKg: 65, gender: 'male' },
+  { id: 'wt-m-70', name: 'Male Under 70 kg', minWeightKg: 65.1, maxWeightKg: 70, gender: 'male' },
+  { id: 'wt-m-75', name: 'Male Under 75 kg', minWeightKg: 70.1, maxWeightKg: 75, gender: 'male' },
+  { id: 'wt-m-80', name: 'Male Under 80 kg', minWeightKg: 75.1, maxWeightKg: 80, gender: 'male' },
+  { id: 'wt-m-85', name: 'Male Under 85 kg', minWeightKg: 80.1, maxWeightKg: 85, gender: 'male' },
+  { id: 'wt-m-90', name: 'Male Under 90 kg', minWeightKg: 85.1, maxWeightKg: 90, gender: 'male' },
+  { id: 'wt-m-90p', name: 'Male Over 90 kg (+90kg)', minWeightKg: 90.1, maxWeightKg: 130, gender: 'male' },
   // Female Sanda divisions (IWUF official rules)
-  { id: 'wt-f-48', name: 'Under 48 kg', minWeightKg: 44, maxWeightKg: 48, gender: 'female' },
-  { id: 'wt-f-52', name: 'Under 52 kg', minWeightKg: 48.1, maxWeightKg: 52, gender: 'female' },
-  { id: 'wt-f-56', name: 'Under 56 kg', minWeightKg: 52.1, maxWeightKg: 56, gender: 'female' },
-  { id: 'wt-f-60', name: 'Under 60 kg', minWeightKg: 56.1, maxWeightKg: 60, gender: 'female' },
-  { id: 'wt-f-65', name: 'Under 65 kg', minWeightKg: 60.1, maxWeightKg: 65, gender: 'female' },
+  { id: 'wt-f-48', name: 'Female Under 48 kg', minWeightKg: 44, maxWeightKg: 48, gender: 'female' },
+  { id: 'wt-f-52', name: 'Female Under 52 kg', minWeightKg: 48.1, maxWeightKg: 52, gender: 'female' },
+  { id: 'wt-f-56', name: 'Female Under 56 kg', minWeightKg: 52.1, maxWeightKg: 56, gender: 'female' },
+  { id: 'wt-f-60', name: 'Female Under 60 kg', minWeightKg: 56.1, maxWeightKg: 60, gender: 'female' },
+  { id: 'wt-f-65', name: 'Female Under 65 kg', minWeightKg: 60.1, maxWeightKg: 65, gender: 'female' },
+  { id: 'wt-f-70', name: 'Female Under 70 kg', minWeightKg: 65.1, maxWeightKg: 70, gender: 'female' },
+  { id: 'wt-f-75', name: 'Female Under 75 kg', minWeightKg: 70.1, maxWeightKg: 75, gender: 'female' },
 ];
 
 export const INITIAL_PLAYERS: Player[] = [];
@@ -115,7 +120,7 @@ export const INITIAL_USERS: User[] = [
 
 export const INITIAL_AUDIT_LOGS: AuditLog[] = [];
 
-// Empty initial brackets for live start
+// Clean empty initial brackets for real tournament
 export function createInitialBrackets(): Bracket[] {
   return [];
 }

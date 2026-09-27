@@ -53,7 +53,6 @@ export interface EventSetup {
 
 export interface Player {
   id: string;
-  eventId?: string; // Associated championship tournament event ID
   registrationNumber: string;
   name: string;
   fatherName: string;
@@ -132,7 +131,7 @@ export interface Bout {
   eventId: string;
   categoryId: string;
   boutNumber: string; // e.g. "B-101"
-  roundName: string; // e.g. "Round of 512", "Round of 256", "Round of 128", "Round of 64", "Round of 32", "Round of 16", "Quarterfinal", "Semifinal", "Final"
+  roundName: 'Round of 32' | 'Round of 16' | 'Quarterfinal' | 'Semifinal' | 'Final';
   roundIndex: number;
   matchIndexInRound: number;
   nextBoutId?: string;
@@ -195,7 +194,8 @@ export interface AuditLog {
     | 'EXPORT_REPORT'
     | 'IMPORT_DATA'
     | 'EVENT_STATUS_CHANGE'
-    | 'EVENT_DELETE';
+    | 'EVENT_DELETE'
+    | 'SYSTEM_RESET';
   target: string;
   details: string;
   entityType?: string;

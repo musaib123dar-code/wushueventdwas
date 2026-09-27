@@ -16,6 +16,8 @@ import {
   Globe,
   Radio,
   Trash2,
+  ShieldAlert,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   getSupabaseConfig,
@@ -23,7 +25,7 @@ import {
   clearSupabaseConfig,
   testSupabaseConnection,
 } from '../../services/supabaseClient';
-import { SUPABASE_SQL_SCHEMA } from '../../services/supabaseSchema';
+import { SUPABASE_SQL_SCHEMA, SUPABASE_RLS_QUICK_FIX } from '../../services/supabaseSchema';
 import { useTournament } from '../../context/TournamentContext';
 
 interface SupabaseSettingsModalProps {
@@ -40,20 +42,20 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({ is
     players,
     categories,
     brackets,
-    users,
-    auditLogs,
   } = useTournament();
 
-  const [activeTab, setActiveTab] = useState<'connect' | 'sync' | 'sql'>('connect');
+  const [activeTab, setActiveTab] = useState<'connect' | 'sync' | 'rls-fix' | 'sql'>('connect');
   const [url, setUrl] = useState('');
   const [anonKey, setAnonKey] = useState('');
   const [testing, setTesting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
+  const [copiedRls, setCopiedRls] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{
     type: 'success' | 'error' | 'info';
     text: string;
     latency?: number;
+    hasRlsIssue?: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -95,7 +97,11 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({ is
       setStatusMessage({
         type: 'error',
         text: res.message,
+        hasRlsIssue: res.hasRlsIssue,
       });
+      if (res.hasRlsIssue) {
+        setActiveTab('rls-fix');
+      }
     }
   };
 
@@ -125,6 +131,9 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({ is
         type: 'error',
         text: res.message,
       });
+      if (res.message.includes('row-level security') || res.message.includes('RLS')) {
+        setActiveTab('rls-fix');
+      }
     }
   };
 
@@ -153,6 +162,12 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({ is
     setTimeout(() => setCopiedSql(false), 3000);
   };
 
+  const copyRlsFixToClipboard = () => {
+    navigator.clipboard.writeText(SUPABASE_RLS_QUICK_FIX);
+    setCopiedRls(true);
+    setTimeout(() => setCopiedRls(false), 3000);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn">
       <div className="bg-slate-900 border border-slate-700/80 rounded-2xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl space-y-5 max-h-[92vh] flex flex-col">
@@ -165,14 +180,14 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({ is
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
-                  Supabase Backend Integration
+                  Supabase Real-Time Backend
                 </h3>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                  PostgreSQL
+                  PostgreSQL Realtime
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Connect your real Supabase.com database for cloud persistence & live sync
+                Instant real-time synchronization across Admin, Ring Officials, and Public Spectators
               </p>
             </div>
           </div>
@@ -185,10 +200,10 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({ is
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center gap-2 border-b border-slate-800 pb-2 text-xs font-semibold shrink-0">
+        <div className="flex items-center gap-2 border-b border-slate-800 pb-2 text-xs font-semibold shrink-0 overflow-x-auto">
           <button
             onClick={() => setActiveTab('connect')}
-            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer ${
+            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
               activeTab === 'connect'
                 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                 : 'text-slate-400 hover:text-slate-200'
@@ -199,7 +214,7 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({ is
           </button>
           <button
             onClick={() => setActiveTab('sync')}
-            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer ${
+            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
               activeTab === 'sync'
                 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                 : 'text-slate-400 hover:text-slate-200'
@@ -209,15 +224,26 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({ is
             <span>Data Sync & Tables</span>
           </button>
           <button
+            onClick={() => setActiveTab('rls-fix')}
+            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
+              activeTab === 'rls-fix'
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                : 'text-amber-400/80 hover:text-amber-300'
+            }`}
+          >
+            <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+            <span>1-Click RLS Fix</span>
+          </button>
+          <button
             onClick={() => setActiveTab('sql')}
-            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer ${
+            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
               activeTab === 'sql'
                 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <Database className="w-3.5 h-3.5" />
-            <span>SQL Schema Script</span>
+            <span>Full SQL Schema</span>
           </button>
         </div>
 
@@ -240,7 +266,7 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({ is
               ) : (
                 <Radio className="w-4 h-4 text-slate-400 shrink-0" />
               )}
-              <span>{statusMessage.text}</span>
+              <span className="leading-relaxed">{statusMessage.text}</span>
             </div>
             {statusMessage.latency !== undefined && (
               <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 shrink-0">
@@ -262,7 +288,7 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({ is
                     {supabaseStatus === 'connected' ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                        Connected & Active
+                        Connected & Realtime Active
                       </span>
                     ) : supabaseStatus === 'connecting' ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/40">
@@ -434,22 +460,70 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({ is
             </div>
           )}
 
-          {/* TAB 3: SQL Schema */}
+          {/* TAB 3: 1-Click RLS Fix */}
+          {activeTab === 'rls-fix' && (
+            <div className="space-y-3">
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-start gap-3">
+                <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <h4 className="font-bold text-amber-300 text-xs">
+                    Fix &quot;new row violates row-level security policy&quot; Error
+                  </h4>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    If Supabase gives an RLS error when adding players or scoring bouts, copy and run this quick SQL in your{' '}
+                    <a
+                      href="https://supabase.com/dashboard"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-amber-400 underline font-semibold inline-flex items-center gap-0.5"
+                    >
+                      Supabase SQL Editor <ExternalLink className="w-3 h-3" />
+                    </a>{' '}
+                    to enable instant read/write permissions for all tournament tables.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl flex items-center justify-between">
+                <div>
+                  <h4 className="font-semibold text-slate-200">Quick RLS & Permissions SQL Script</h4>
+                  <p className="text-[10px] text-slate-400">
+                    Grants permissions and creates open policies for real-time live sync
+                  </p>
+                </div>
+                <button
+                  onClick={copyRlsFixToClipboard}
+                  className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 cursor-pointer transition-colors shrink-0 shadow-md shadow-amber-500/20"
+                >
+                  {copiedRls ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedRls ? 'Copied RLS Script!' : 'Copy RLS Fix SQL'}</span>
+                </button>
+              </div>
+
+              <div className="relative">
+                <pre className="p-3 bg-slate-950 border border-slate-800 rounded-xl text-[10px] font-mono text-amber-300 max-h-[220px] overflow-y-auto leading-relaxed">
+                  {SUPABASE_RLS_QUICK_FIX}
+                </pre>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: Full SQL Schema */}
           {activeTab === 'sql' && (
             <div className="space-y-3">
               <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl flex items-center justify-between">
                 <div>
-                  <h4 className="font-semibold text-slate-200">Supabase SQL Schema (PostgreSQL)</h4>
+                  <h4 className="font-semibold text-slate-200">Full Supabase SQL Schema (PostgreSQL)</h4>
                   <p className="text-[11px] text-slate-400">
-                    Paste this into Supabase SQL Editor &rarr; New Query &rarr; Run
+                    Complete script to create all 8 tables, indexes, realtime publications, and RLS policies
                   </p>
                 </div>
                 <button
                   onClick={copySqlToClipboard}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 cursor-pointer transition-colors shrink-0"
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 cursor-pointer transition-colors shrink-0 shadow-md shadow-emerald-500/20"
                 >
                   {copiedSql ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedSql ? 'Copied to Clipboard!' : 'Copy SQL Script'}</span>
+                  <span>{copiedSql ? 'Copied to Clipboard!' : 'Copy Full SQL Script'}</span>
                 </button>
               </div>
 
@@ -466,7 +540,7 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({ is
         <div className="pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 shrink-0">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            <span>Supabase Cloud Native</span>
+            <span>Supabase Cloud PostgreSQL & Realtime Ready</span>
           </div>
           <button
             onClick={onClose}

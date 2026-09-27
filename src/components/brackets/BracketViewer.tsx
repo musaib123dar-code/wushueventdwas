@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useTournament } from '../../context/TournamentContext';
 import { Bracket, Bout, Category } from '../../types/tournament';
 import {
@@ -15,19 +15,12 @@ import {
   Swords,
   ChevronRight,
   Info,
-  FileDown,
-  FileText,
-  ChevronDown,
 } from 'lucide-react';
-import { exportCategoryFixturesPdf, exportAllFixturesPdf } from '../../utils/fixturesPdfExport';
 
 export const BracketViewer: React.FC = () => {
   const {
     brackets,
     categories,
-    event,
-    events,
-    switchEvent,
     regenerateBracketForCategory,
     reopenBoutResult,
     setActiveBoutForScoring,
@@ -42,47 +35,8 @@ export const BracketViewer: React.FC = () => {
   const [reopenReason, setReopenReason] = useState('');
   const [regenModalOpen, setRegenModalOpen] = useState(false);
   const [regenReason, setRegenReason] = useState('');
-  const [pdfDropdownOpen, setPdfDropdownOpen] = useState(false);
-  const [pdfExporting, setPdfExporting] = useState(false);
 
-  // Close PDF dropdown on outside click
-  useEffect(() => {
-    const handleOutside = () => setPdfDropdownOpen(false);
-    if (pdfDropdownOpen) {
-      window.addEventListener('click', handleOutside);
-      return () => window.removeEventListener('click', handleOutside);
-    }
-  }, [pdfDropdownOpen]);
-
-  const handleExportCategoryPdf = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!currentCategory) return;
-    setPdfExporting(true);
-    setPdfDropdownOpen(false);
-    try {
-      exportCategoryFixturesPdf(currentCategory, currentBracket, event);
-    } finally {
-      setPdfExporting(false);
-    }
-  };
-
-  const handleExportAllPdf = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setPdfExporting(true);
-    setPdfDropdownOpen(false);
-    try {
-      exportAllFixturesPdf(categories, brackets, event);
-    } finally {
-      setPdfExporting(false);
-    }
-  };
-
-  // Keep selected category synchronized when switching championship events
-  useEffect(() => {
-    if (!categories.some(c => c.id === selectedCategoryId)) {
-      setSelectedCategoryId(categories[0]?.id || '');
-    }
-  }, [categories, selectedCategoryId]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const currentBracket = brackets.find(b => b.categoryId === selectedCategoryId);
   const currentCategory = categories.find(c => c.id === selectedCategoryId);
@@ -100,7 +54,7 @@ export const BracketViewer: React.FC = () => {
     if (!reopenBoutModal || !reopenReason.trim()) return;
     const res = reopenBoutResult(reopenBoutModal.id, reopenReason.trim());
     if (!res.success) {
-      alert(res.error);
+      setErrorMessage(res.error || 'Failed to reopen bout.');
     }
     setReopenBoutModal(null);
     setReopenReason('');
@@ -111,7 +65,7 @@ export const BracketViewer: React.FC = () => {
     if (!selectedCategoryId || !regenReason.trim()) return;
     const res = regenerateBracketForCategory(selectedCategoryId, regenReason.trim());
     if (!res.success) {
-      alert(res.error);
+      setErrorMessage(res.error || 'Failed to regenerate bracket.');
     }
     setRegenModalOpen(false);
     setRegenReason('');
@@ -120,30 +74,27 @@ export const BracketViewer: React.FC = () => {
   return (
     <div className="space-y-6 pb-16">
       {/* Header & Category Selector Bar */}
+      {errorMessage && (
+        <div className="p-3 bg-red-950/70 border border-red-500/50 rounded-xl text-xs text-red-200 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+          <button
+            onClick={() => setErrorMessage(null)}
+            className="text-slate-400 hover:text-white text-xs px-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-              <GitFork className="w-5 h-5 text-amber-400" />
-              Single-Elimination Knockout Fixtures
-            </h1>
-            {events.length > 1 && (
-              <div className="flex items-center gap-1.5 text-xs">
-                <span className="text-slate-400 font-medium">Championship:</span>
-                <select
-                  value={event.id}
-                  onChange={e => switchEvent(e.target.value)}
-                  className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1 font-medium focus:outline-none focus:border-amber-400 cursor-pointer max-w-[180px] truncate"
-                >
-                  {events.map(ev => (
-                    <option key={ev.id} value={ev.id}>
-                      {ev.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
+          <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+            <GitFork className="w-5 h-5 text-amber-400" />
+            Single-Elimination Knockout Fixtures
+          </h1>
           <p className="text-xs text-slate-400 mt-0.5">
             Interactive tree with automatic BYE advancement, live official scoring, and winner progression.
           </p>
@@ -191,56 +142,6 @@ export const BracketViewer: React.FC = () => {
             <Printer className="w-3.5 h-3.5 text-slate-400" />
             <span>Print Tree</span>
           </button>
-
-          {/* PDF Fixtures Export Menu */}
-          <div className="relative">
-            <button
-              onClick={e => {
-                e.stopPropagation();
-                setPdfDropdownOpen(prev => !prev);
-              }}
-              disabled={pdfExporting}
-              className="px-3 py-1.5 text-xs font-bold text-slate-950 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 rounded-lg shadow-md shadow-amber-500/20 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-              title="Export Fixtures in PDF Format"
-            >
-              <FileDown className="w-3.5 h-3.5 text-slate-950" />
-              <span>{pdfExporting ? 'Generating PDF...' : 'Export Fixtures PDF'}</span>
-              <ChevronDown className={`w-3 h-3 text-slate-900 transition-transform ${pdfDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {pdfDropdownOpen && (
-              <div
-                onClick={e => e.stopPropagation()}
-                className="absolute right-0 top-full mt-1.5 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-1.5 z-30 animate-in fade-in zoom-in-95 duration-150"
-              >
-                <div className="px-2 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800">
-                  PDF Fixture Export Options
-                </div>
-
-                <button
-                  onClick={handleExportCategoryPdf}
-                  className="w-full text-left px-2.5 py-2 rounded-lg text-xs hover:bg-slate-800 text-slate-200 hover:text-white flex items-center gap-2 cursor-pointer transition-colors"
-                >
-                  <FileText className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <div className="font-semibold truncate">Current Division PDF</div>
-                    <div className="text-[10px] text-slate-400 truncate">{currentCategory?.name || 'Selected Category'}</div>
-                  </div>
-                </button>
-
-                <button
-                  onClick={handleExportAllPdf}
-                  className="w-full text-left px-2.5 py-2 rounded-lg text-xs hover:bg-slate-800 text-slate-200 hover:text-white flex items-center gap-2 cursor-pointer transition-colors mt-0.5"
-                >
-                  <FileDown className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <div className="font-semibold">Complete Championship Booklet</div>
-                    <div className="text-[10px] text-slate-400">All {categories.length} divisions in 1 PDF</div>
-                  </div>
-                </button>
-              </div>
-            )}
-          </div>
         </div>
       </div>
 
@@ -273,13 +174,13 @@ export const BracketViewer: React.FC = () => {
           </div>
 
           {/* Bracket Tree Columns */}
-          <div className="flex items-stretch gap-8 sm:gap-10 min-w-max pb-6">
+          <div className="flex items-stretch gap-10 min-w-[960px] pb-6">
             {currentBracket.rounds.map((round, rIndex) => {
               const isFinalRound = rIndex === currentBracket.rounds.length - 1;
               const matchesCount = round.bouts.length;
 
               return (
-                <div key={`${round.roundName}-${rIndex}`} className="w-56 sm:w-64 shrink-0 flex flex-col">
+                <div key={round.roundName} className="flex-1 flex flex-col">
                   {/* Round Column Title */}
                   <div className="text-center pb-4 mb-4 border-b border-slate-800/60">
                     <div className="text-xs font-bold text-slate-200 uppercase tracking-wider font-cinzel">

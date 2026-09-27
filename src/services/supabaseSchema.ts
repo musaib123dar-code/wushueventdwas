@@ -1,6 +1,62 @@
-// Supabase PostgreSQL Schema for Wushu Sanda Tournament Arena
+// Supabase PostgreSQL Schema & RLS Fix for Wushu Sanda Tournament Arena
+
+export const SUPABASE_RLS_QUICK_FIX = `-- =========================================================================
+-- QUICK FIX FOR "new row violates row-level security policy"
+-- Paste and run this in Supabase Dashboard -> SQL Editor -> New Query
+-- =========================================================================
+
+-- 1. Grant table privileges to anon and public
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role, postgres;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role, postgres;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role, postgres;
+GRANT ALL ON ALL ROUTINES IN SCHEMA public TO anon, authenticated, service_role, postgres;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role, postgres;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role, postgres;
+
+-- 2. Ensure RLS allows all read/write operations for clients
+ALTER TABLE public.events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.age_categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.weight_categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.players ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.brackets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tournament_users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+
+-- Drop previous policies
+DROP POLICY IF EXISTS "Allow full access for all operations" ON public.events;
+DROP POLICY IF EXISTS "Allow full access for all operations" ON public.age_categories;
+DROP POLICY IF EXISTS "Allow full access for all operations" ON public.weight_categories;
+DROP POLICY IF EXISTS "Allow full access for all operations" ON public.players;
+DROP POLICY IF EXISTS "Allow full access for all operations" ON public.categories;
+DROP POLICY IF EXISTS "Allow full access for all operations" ON public.brackets;
+DROP POLICY IF EXISTS "Allow full access for all operations" ON public.tournament_users;
+DROP POLICY IF EXISTS "Allow full access for all operations" ON public.audit_logs;
+
+-- Re-create permissive policies
+CREATE POLICY "Allow full access for all operations" ON public.events FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
+CREATE POLICY "Allow full access for all operations" ON public.age_categories FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
+CREATE POLICY "Allow full access for all operations" ON public.weight_categories FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
+CREATE POLICY "Allow full access for all operations" ON public.players FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
+CREATE POLICY "Allow full access for all operations" ON public.categories FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
+CREATE POLICY "Allow full access for all operations" ON public.brackets FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
+CREATE POLICY "Allow full access for all operations" ON public.tournament_users FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
+CREATE POLICY "Allow full access for all operations" ON public.audit_logs FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
+
+-- 3. Full Replica Identity for instant realtime broadcasts
+ALTER TABLE public.events REPLICA IDENTITY FULL;
+ALTER TABLE public.age_categories REPLICA IDENTITY FULL;
+ALTER TABLE public.weight_categories REPLICA IDENTITY FULL;
+ALTER TABLE public.players REPLICA IDENTITY FULL;
+ALTER TABLE public.categories REPLICA IDENTITY FULL;
+ALTER TABLE public.brackets REPLICA IDENTITY FULL;
+ALTER TABLE public.tournament_users REPLICA IDENTITY FULL;
+ALTER TABLE public.audit_logs REPLICA IDENTITY FULL;
+`;
+
 export const SUPABASE_SQL_SCHEMA = `-- =========================================================================
--- WUSHU SANDA TOURNAMENT ARENA - SUPABASE POSTGRESQL SCHEMA
+-- WUSHU SANDA TOURNAMENT ARENA - SUPABASE POSTGRESQL SCHEMA & RLS FIX
 -- Run this script in the Supabase SQL Editor (Dashboard > SQL Editor > New Query)
 -- =========================================================================
 
@@ -52,7 +108,6 @@ CREATE TABLE IF NOT EXISTS public.weight_categories (
 -- 5. Players / Athletes Registry Table
 CREATE TABLE IF NOT EXISTS public.players (
   id TEXT PRIMARY KEY,
-  event_id TEXT,
   registration_number TEXT,
   name TEXT NOT NULL,
   father_name TEXT,
@@ -68,7 +123,6 @@ CREATE TABLE IF NOT EXISTS public.players (
   created_at TEXT,
   updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
-ALTER TABLE public.players ADD COLUMN IF NOT EXISTS event_id TEXT;
 
 -- 6. Category Divisions Table
 CREATE TABLE IF NOT EXISTS public.categories (
@@ -125,7 +179,16 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
   created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- 10. Enable Row Level Security (RLS)
+-- 10. Grant Full Permissions to Public, Anon, Authenticated, and Service Role
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role, postgres;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role, postgres;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role, postgres;
+GRANT ALL ON ALL ROUTINES IN SCHEMA public TO anon, authenticated, service_role, postgres;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role, postgres;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role, postgres;
+
+-- 11. Configure Row Level Security (RLS) - Completely Open for Tournament Sync
 ALTER TABLE public.events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.age_categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.weight_categories ENABLE ROW LEVEL SECURITY;
@@ -135,7 +198,7 @@ ALTER TABLE public.brackets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tournament_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 
--- Drop existing policies if re-running
+-- Drop any previous restrictive policies
 DROP POLICY IF EXISTS "Allow full access for all operations" ON public.events;
 DROP POLICY IF EXISTS "Allow full access for all operations" ON public.age_categories;
 DROP POLICY IF EXISTS "Allow full access for all operations" ON public.weight_categories;
@@ -145,42 +208,64 @@ DROP POLICY IF EXISTS "Allow full access for all operations" ON public.brackets;
 DROP POLICY IF EXISTS "Allow full access for all operations" ON public.tournament_users;
 DROP POLICY IF EXISTS "Allow full access for all operations" ON public.audit_logs;
 
--- Create open policies for seamless tournament client sync
-CREATE POLICY "Allow full access for all operations" ON public.events FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow full access for all operations" ON public.age_categories FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow full access for all operations" ON public.weight_categories FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow full access for all operations" ON public.players FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow full access for all operations" ON public.categories FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow full access for all operations" ON public.brackets FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow full access for all operations" ON public.tournament_users FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow full access for all operations" ON public.audit_logs FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Enable read access for all users" ON public.players;
+DROP POLICY IF EXISTS "Enable insert for authenticated users only" ON public.players;
+DROP POLICY IF EXISTS "Enable all access for anon" ON public.players;
 
--- 11. Enable Supabase Realtime for Live Scoring & Instant Synchronization
+-- Create ultra-permissive policies for anon and authenticated clients
+CREATE POLICY "Allow full access for all operations" ON public.events FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
+CREATE POLICY "Allow full access for all operations" ON public.age_categories FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
+CREATE POLICY "Allow full access for all operations" ON public.weight_categories FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
+CREATE POLICY "Allow full access for all operations" ON public.players FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
+CREATE POLICY "Allow full access for all operations" ON public.categories FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
+CREATE POLICY "Allow full access for all operations" ON public.brackets FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
+CREATE POLICY "Allow full access for all operations" ON public.tournament_users FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
+CREATE POLICY "Allow full access for all operations" ON public.audit_logs FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
+
+-- 12. Enable Full Replica Identity so Realtime broadcast includes complete row payloads
+ALTER TABLE public.events REPLICA IDENTITY FULL;
+ALTER TABLE public.age_categories REPLICA IDENTITY FULL;
+ALTER TABLE public.weight_categories REPLICA IDENTITY FULL;
+ALTER TABLE public.players REPLICA IDENTITY FULL;
+ALTER TABLE public.categories REPLICA IDENTITY FULL;
+ALTER TABLE public.brackets REPLICA IDENTITY FULL;
+ALTER TABLE public.tournament_users REPLICA IDENTITY FULL;
+ALTER TABLE public.audit_logs REPLICA IDENTITY FULL;
+
+-- 13. Enable Supabase Realtime Publication for Live Scoring & Instant Synchronization
 DO $$
 BEGIN
   BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.events;
-  EXCEPTION WHEN duplicate_object THEN NULL;
+  EXCEPTION WHEN others THEN NULL;
   END;
   BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.players;
-  EXCEPTION WHEN duplicate_object THEN NULL;
+  EXCEPTION WHEN others THEN NULL;
   END;
   BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.categories;
-  EXCEPTION WHEN duplicate_object THEN NULL;
+  EXCEPTION WHEN others THEN NULL;
   END;
   BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.brackets;
-  EXCEPTION WHEN duplicate_object THEN NULL;
+  EXCEPTION WHEN others THEN NULL;
   END;
   BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.tournament_users;
-  EXCEPTION WHEN duplicate_object THEN NULL;
+  EXCEPTION WHEN others THEN NULL;
   END;
   BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.audit_logs;
-  EXCEPTION WHEN duplicate_object THEN NULL;
+  EXCEPTION WHEN others THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.age_categories;
+  EXCEPTION WHEN others THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.weight_categories;
+  EXCEPTION WHEN others THEN NULL;
   END;
 END $$;
 `;

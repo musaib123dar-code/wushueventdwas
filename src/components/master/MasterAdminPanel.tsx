@@ -35,9 +35,7 @@ import {
   ExternalLink,
   Trophy,
   Zap,
-  FileDown,
 } from 'lucide-react';
-import { exportAllFixturesPdf } from '../../utils/fixturesPdfExport';
 
 export const MasterAdminPanel: React.FC = () => {
   const {
@@ -60,18 +58,17 @@ export const MasterAdminPanel: React.FC = () => {
     deleteWeightCategory,
     resetWeightCategories,
     players,
-    allPlayers,
     clearAllPlayers,
     categories,
-    allCategories,
     brackets,
-    allBrackets,
     clearAllCategoriesAndBrackets,
     exportMasterExcelBackup,
     importMasterWorkbook,
     setActiveTab,
     supabaseStatus,
     setSupabaseModalOpen,
+    resetToDefaults,
+    clearAllCacheAndReset,
   } = useTournament();
 
   const [activeSubTab, setActiveSubTab] = useState<'event' | 'weights' | 'ages' | 'excel' | 'lifecycle'>('event');
@@ -212,7 +209,7 @@ export const MasterAdminPanel: React.FC = () => {
   const [isProcessingFile, setIsProcessingFile] = useState(false);
 
   // Confirmation dialogs
-  const [confirmClearAction, setConfirmClearAction] = useState<'players' | 'fixtures' | 'newEvent' | null>(null);
+  const [confirmClearAction, setConfirmClearAction] = useState<'players' | 'fixtures' | 'newEvent' | 'resetAll' | null>(null);
 
   const showFeedback = (type: 'success' | 'error' | 'info', text: string) => {
     setFeedback({ type, text });
@@ -1381,7 +1378,7 @@ export const MasterAdminPanel: React.FC = () => {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {/* Option A: Initialize Brand New Event */}
               <div className="p-5 rounded-xl border border-amber-500/40 bg-slate-950 space-y-3 flex flex-col justify-between">
                 <div className="space-y-2">
@@ -1442,8 +1439,28 @@ export const MasterAdminPanel: React.FC = () => {
                 </button>
               </div>
 
-              {/* Option D: Supabase Cloud Database */}
-              <div className="p-5 rounded-xl border border-emerald-500/40 bg-slate-950 space-y-3 flex flex-col justify-between">
+              {/* Option D: Complete Clean Slate for Real Production */}
+              <div className="p-5 rounded-xl border border-red-500/50 bg-slate-950 space-y-3 flex flex-col justify-between">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-red-400 font-bold text-xs uppercase tracking-wider">
+                    <ShieldCheck className="w-4 h-4" />
+                    Production Ready
+                  </div>
+                  <h4 className="text-sm font-bold text-white">Clear All Cache & Reset for Real Work</h4>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Wipes all leftover demo cache from browser storage and resets the entire workspace and Supabase database for a clean official tournament start.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setConfirmClearAction('resetAll')}
+                  className="w-full py-2 bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white font-bold rounded-lg text-xs transition-all cursor-pointer shadow-md shadow-red-950/50"
+                >
+                  Clear All Cache & Prepare for Real Work
+                </button>
+              </div>
+
+              {/* Option E: Supabase Cloud Database */}
+              <div className="p-5 rounded-xl border border-emerald-500/40 bg-slate-950 space-y-3 flex flex-col justify-between md:col-span-2">
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
                     <Zap className="w-4 h-4" />
@@ -1609,22 +1626,6 @@ export const MasterAdminPanel: React.FC = () => {
                     ))}
                   </div>
 
-                  {/* Event Scoped Athlete & Category Statistics */}
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="p-2 bg-slate-950/60 rounded-lg border border-slate-800/80 flex items-center justify-between">
-                      <span className="text-[11px] text-slate-400">Athletes Registered:</span>
-                      <span className="font-mono font-bold text-white">
-                        {allPlayers.filter(p => p.eventId === ev.id || (!p.eventId && events.length <= 1)).length}
-                      </span>
-                    </div>
-                    <div className="p-2 bg-slate-950/60 rounded-lg border border-slate-800/80 flex items-center justify-between">
-                      <span className="text-[11px] text-slate-400">Category Divisions:</span>
-                      <span className="font-mono font-bold text-amber-400">
-                        {allCategories.filter(c => c.eventId === ev.id || (!c.eventId && events.length <= 1)).length}
-                      </span>
-                    </div>
-                  </div>
-
                   {/* Action Buttons Row */}
                   <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2">
                     {/* Live / Inactive Toggle */}
@@ -1655,38 +1656,23 @@ export const MasterAdminPanel: React.FC = () => {
                     )}
 
                     {/* Switch workspace */}
-                    <div className="flex items-center gap-2">
+                    {!isActiveWorkspace ? (
                       <button
                         onClick={() => {
-                          const evCategories = allCategories.filter(c => c.eventId === ev.id || (!c.eventId && events.length <= 1));
-                          const evBrackets = allBrackets.filter(b => b.eventId === ev.id || (!b.eventId && events.length <= 1));
-                          exportAllFixturesPdf(evCategories, evBrackets, ev);
+                          switchEvent(ev.id);
+                          showFeedback('info', `Switched active workspace to "${ev.name}".`);
                         }}
-                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-700 hover:border-amber-500/40 transition-colors cursor-pointer"
-                        title="Download official fixtures booklet PDF for this championship"
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
                       >
-                        <FileDown className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Fixtures PDF</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Switch Workspace</span>
                       </button>
-
-                      {!isActiveWorkspace ? (
-                        <button
-                          onClick={() => {
-                            switchEvent(ev.id);
-                            showFeedback('info', `Switched active workspace to "${ev.name}".`);
-                          }}
-                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          <span>Switch Workspace</span>
-                        </button>
-                      ) : (
-                        <span className="text-xs text-amber-400 font-semibold flex items-center gap-1 px-2.5 py-1 bg-amber-500/10 rounded-md border border-amber-500/20">
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Currently Active</span>
-                        </span>
-                      )}
-                    </div>
+                    ) : (
+                      <span className="text-xs text-amber-400 font-semibold flex items-center gap-1 px-2.5 py-1 bg-amber-500/10 rounded-md border border-amber-500/20">
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Currently Active</span>
+                      </span>
+                    )}
                   </div>
                 </div>
               );
@@ -1890,6 +1876,7 @@ export const MasterAdminPanel: React.FC = () => {
                 {confirmClearAction === 'players' && 'Confirm Wipe Athlete Registry'}
                 {confirmClearAction === 'fixtures' && 'Confirm Reset Fixtures & Categories'}
                 {confirmClearAction === 'newEvent' && 'Initialize Brand New Championship Scope'}
+                {confirmClearAction === 'resetAll' && 'Clear All Cache & Prepare for Real Work'}
               </h3>
             </div>
 
@@ -1900,6 +1887,8 @@ export const MasterAdminPanel: React.FC = () => {
                 `Are you sure you want to clear all ${brackets.length} knockout brackets and ${categories.length} category divisions? Athletes will remain registered for new category formation.`}
               {confirmClearAction === 'newEvent' &&
                 `This will initialize a new official tournament event ID for "${eventForm.name || 'New Event'}" and clear previous rosters and fixtures so you can register fresh players.`}
+              {confirmClearAction === 'resetAll' &&
+                'This will clear all browser storage caches, reset athlete registrations and brackets, and synchronize clean initial official data with Supabase for real live tournament operation.'}
             </p>
 
             <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
@@ -1919,6 +1908,9 @@ export const MasterAdminPanel: React.FC = () => {
                     showFeedback('success', 'Categories and brackets reset.');
                   } else if (confirmClearAction === 'newEvent') {
                     handleCreateNewEvent();
+                  } else if (confirmClearAction === 'resetAll') {
+                    clearAllCacheAndReset();
+                    showFeedback('success', 'All caches cleared! Workspace and Supabase are fresh and ready for official tournament data.');
                   }
                   setConfirmClearAction(null);
                 }}
@@ -1951,28 +1943,6 @@ export const MasterAdminPanel: React.FC = () => {
               Are you sure you want to permanently delete the championship tournament:{' '}
               <strong className="text-white">"{deleteEventTarget.name || 'Untitled Event'}"</strong>?
             </p>
-
-            <div className="p-3.5 bg-rose-950/40 border border-rose-900/50 rounded-xl space-y-2 text-xs text-rose-200">
-              <div className="font-bold flex items-center gap-1.5 text-rose-300">
-                <AlertTriangle className="w-4 h-4 text-rose-400" />
-                All event data will be permanently wiped:
-              </div>
-              <ul className="list-disc pl-5 space-y-1 text-slate-300 text-[11px]">
-                <li>
-                  <strong className="text-rose-300">
-                    {allPlayers.filter(p => p.eventId === deleteEventTarget.id || (!p.eventId && events.length <= 1)).length} Registered Athletes
-                  </strong>{' '}
-                  registered for this championship will be permanently purged.
-                </li>
-                <li>
-                  <strong className="text-rose-300">
-                    {allCategories.filter(c => c.eventId === deleteEventTarget.id || (!c.eventId && events.length <= 1)).length} Category Divisions
-                  </strong>{' '}
-                  and associated bout draw records will be deleted.
-                </li>
-                <li>All knockout fixture trees and live scoring bouts will be deleted.</li>
-              </ul>
-            </div>
 
             {deleteEventTarget.id === event.id && (
               <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-300 space-y-1">
