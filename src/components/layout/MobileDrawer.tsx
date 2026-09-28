@@ -23,6 +23,7 @@ import {
   Radio,
   ExternalLink,
   Database,
+  Info,
 } from 'lucide-react';
 import { soundEffects } from '../../utils/soundEffects';
 
@@ -75,6 +76,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
     { id: 'audit', label: 'System Audit Logs', icon: <History className="w-4 h-4" />, allowedRoles: ['super_admin', 'admin'] },
     { id: 'users', label: 'Register Staff & Officials', icon: <ShieldCheck className="w-4 h-4" />, allowedRoles: ['super_admin'] },
     { id: 'exports', label: 'Reports & Export', icon: <FileSpreadsheet className="w-4 h-4" />, allowedRoles: ['super_admin', 'admin', 'official'] },
+    { id: 'about', label: 'About Us', icon: <Info className="w-4 h-4 text-amber-400" />, allowedRoles: ['super_admin', 'admin', 'official', 'general_view'] },
   ];
 
   const visibleItems = navItems.filter(item => item.allowedRoles.includes(role));

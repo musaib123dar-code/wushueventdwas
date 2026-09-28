@@ -170,6 +170,13 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu }) => {
             <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
             Leitai Scoring
           </button>
+
+          <button
+            onClick={() => setActiveTab('about')}
+            className={`hover:text-slate-100 transition-colors cursor-pointer ${activeTab === 'about' ? 'text-amber-400 font-semibold' : ''}`}
+          >
+            About Us
+          </button>
         </nav>
 
         {/* Zone 3: Actions + Authentication Controls */}

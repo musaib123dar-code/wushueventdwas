@@ -132,7 +132,7 @@ export interface Bout {
   eventId: string;
   categoryId: string;
   boutNumber: string; // e.g. "B-101"
-  roundName: 'Round of 32' | 'Round of 16' | 'Quarterfinal' | 'Semifinal' | 'Final';
+  roundName: 'Round of 512' | 'Round of 256' | 'Round of 128' | 'Round of 64' | 'Round of 32' | 'Round of 16' | 'Quarterfinal' | 'Semifinal' | 'Final' | string;
   roundIndex: number;
   matchIndexInRound: number;
   nextBoutId?: string;
@@ -196,6 +196,9 @@ export interface AuditLog {
     | 'IMPORT_DATA'
     | 'EVENT_STATUS_CHANGE'
     | 'EVENT_DELETE'
+    | 'FIXTURE_EDIT'
+    | 'FIXTURE_PLAYER_MOVE'
+    | 'FIXTURE_PLAYER_SWAP'
     | 'SYSTEM_RESET';
   target: string;
   details: string;

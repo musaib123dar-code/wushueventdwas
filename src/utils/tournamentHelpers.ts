@@ -405,3 +405,226 @@ export function reopenBoutInBracket(
     rounds: updatedRounds,
   };
 }
+
+/**
+ * Atomically moves a player from one bout/corner to another bout/corner in a bracket.
+ * Preserves bracket rounds, bout IDs, bout numbers, rings, and round progression.
+ */
+export function applyMovePlayerInBracket(
+  bracket: Bracket,
+  sourceBoutId: string,
+  sourceCorner: 'red' | 'blue',
+  destBoutId: string,
+  destCorner: 'red' | 'blue'
+): Bracket {
+  let movingPlayerId: string | null = null;
+  let movingPlayerName: string | undefined = undefined;
+  let movingPlayerClub: string | undefined = undefined;
+
+  // 1. Locate source bout and extract player
+  for (const r of bracket.rounds) {
+    for (const b of r.bouts) {
+      if (b.id === sourceBoutId) {
+        if (sourceCorner === 'red') {
+          movingPlayerId = b.redPlayerId || null;
+          movingPlayerName = b.redPlayerName;
+          movingPlayerClub = b.redClub;
+        } else {
+          movingPlayerId = b.bluePlayerId || null;
+          movingPlayerName = b.bluePlayerName;
+          movingPlayerClub = b.blueClub;
+        }
+      }
+    }
+  }
+
+  // 2. Map rounds with atomic update
+  const updatedRounds = bracket.rounds.map(round => ({
+    ...round,
+    bouts: round.bouts.map(b => {
+      const mod = { ...b };
+
+      // Source bout: vacate player
+      if (b.id === sourceBoutId) {
+        if (sourceCorner === 'red') {
+          mod.redPlayerId = null;
+          mod.redPlayerName = undefined;
+          mod.redClub = undefined;
+        } else {
+          mod.bluePlayerId = null;
+          mod.bluePlayerName = undefined;
+          mod.blueClub = undefined;
+        }
+        if (!mod.isBye) {
+          mod.status = 'scheduled';
+        }
+      }
+
+      // Destination bout: assign player
+      if (b.id === destBoutId) {
+        if (destCorner === 'red') {
+          mod.redPlayerId = movingPlayerId;
+          mod.redPlayerName = movingPlayerName;
+          mod.redClub = movingPlayerClub;
+        } else {
+          mod.bluePlayerId = movingPlayerId;
+          mod.bluePlayerName = movingPlayerName;
+          mod.blueClub = movingPlayerClub;
+        }
+
+        // If replacing a BYE, clear BYE flags and ensure proper readiness
+        if (mod.isBye) {
+          const hasRed = Boolean(mod.redPlayerId || (mod.redPlayerName && mod.redPlayerName !== '— BYE —'));
+          const hasBlue = Boolean(mod.bluePlayerId || (mod.bluePlayerName && mod.bluePlayerName !== '— BYE —'));
+          if (hasRed && hasBlue) {
+            mod.isBye = false;
+            mod.status = 'ready';
+            mod.winnerId = null;
+            mod.winnerCorner = undefined;
+            mod.winningReason = undefined;
+            mod.resultLocked = false;
+          }
+        } else if (mod.redPlayerId && mod.bluePlayerId) {
+          mod.status = 'ready';
+        }
+      }
+
+      return mod;
+    }),
+  }));
+
+  return {
+    ...bracket,
+    rounds: updatedRounds,
+  };
+}
+
+/**
+ * Atomically swaps two players between two bout positions.
+ */
+export function applySwapPlayersInBracket(
+  bracket: Bracket,
+  boutIdA: string,
+  cornerA: 'red' | 'blue',
+  boutIdB: string,
+  cornerB: 'red' | 'blue'
+): Bracket {
+  let playerAId: string | null = null;
+  let playerAName: string | undefined = undefined;
+  let playerAClub: string | undefined = undefined;
+
+  let playerBId: string | null = null;
+  let playerBName: string | undefined = undefined;
+  let playerBClub: string | undefined = undefined;
+
+  for (const r of bracket.rounds) {
+    for (const b of r.bouts) {
+      if (b.id === boutIdA) {
+        if (cornerA === 'red') {
+          playerAId = b.redPlayerId || null;
+          playerAName = b.redPlayerName;
+          playerAClub = b.redClub;
+        } else {
+          playerAId = b.bluePlayerId || null;
+          playerAName = b.bluePlayerName;
+          playerAClub = b.blueClub;
+        }
+      }
+      if (b.id === boutIdB) {
+        if (cornerB === 'red') {
+          playerBId = b.redPlayerId || null;
+          playerBName = b.redPlayerName;
+          playerBClub = b.redClub;
+        } else {
+          playerBId = b.bluePlayerId || null;
+          playerBName = b.bluePlayerName;
+          playerBClub = b.blueClub;
+        }
+      }
+    }
+  }
+
+  const updatedRounds = bracket.rounds.map(round => ({
+    ...round,
+    bouts: round.bouts.map(b => {
+      const mod = { ...b };
+      if (b.id === boutIdA) {
+        if (cornerA === 'red') {
+          mod.redPlayerId = playerBId;
+          mod.redPlayerName = playerBName;
+          mod.redClub = playerBClub;
+        } else {
+          mod.bluePlayerId = playerBId;
+          mod.bluePlayerName = playerBName;
+          mod.blueClub = playerBClub;
+        }
+      }
+      if (b.id === boutIdB) {
+        if (cornerB === 'red') {
+          mod.redPlayerId = playerAId;
+          mod.redPlayerName = playerAName;
+          mod.redClub = playerAClub;
+        } else {
+          mod.bluePlayerId = playerAId;
+          mod.bluePlayerName = playerAName;
+          mod.blueClub = playerAClub;
+        }
+      }
+      return mod;
+    }),
+  }));
+
+  return {
+    ...bracket,
+    rounds: updatedRounds,
+  };
+}
+
+/**
+ * Validates that no active player is assigned to two different active bouts in the bracket.
+ */
+export function validateBracketNoDuplicates(bracket: Bracket): {
+  isValid: boolean;
+  duplicatePlayerName?: string;
+  boutNumbers?: string[];
+} {
+  const seenPlayers: Map<string, { name: string; boutNumbers: string[] }> = new Map();
+
+  for (const round of bracket.rounds) {
+    for (const b of round.bouts) {
+      if (b.redPlayerId && b.redPlayerName && b.redPlayerName !== '— BYE —') {
+        const existing = seenPlayers.get(b.redPlayerId);
+        if (existing) {
+          if (!existing.boutNumbers.includes(b.boutNumber)) {
+            existing.boutNumbers.push(b.boutNumber);
+            return {
+              isValid: false,
+              duplicatePlayerName: b.redPlayerName,
+              boutNumbers: existing.boutNumbers,
+            };
+          }
+        } else {
+          seenPlayers.set(b.redPlayerId, { name: b.redPlayerName, boutNumbers: [b.boutNumber] });
+        }
+      }
+
+      if (b.bluePlayerId && b.bluePlayerName && b.bluePlayerName !== '— BYE —') {
+        const existing = seenPlayers.get(b.bluePlayerId);
+        if (existing) {
+          if (!existing.boutNumbers.includes(b.boutNumber)) {
+            existing.boutNumbers.push(b.boutNumber);
+            return {
+              isValid: false,
+              duplicatePlayerName: b.bluePlayerName,
+              boutNumbers: existing.boutNumbers,
+            };
+          }
+        } else {
+          seenPlayers.set(b.bluePlayerId, { name: b.bluePlayerName, boutNumbers: [b.boutNumber] });
+        }
+      }
+    }
+  }
+
+  return { isValid: true };
+}

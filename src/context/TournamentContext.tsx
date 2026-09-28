@@ -29,6 +29,9 @@ import {
   advanceWinnerInBracket,
   reopenBoutInBracket,
   findBoutInRounds,
+  applyMovePlayerInBracket,
+  applySwapPlayersInBracket,
+  validateBracketNoDuplicates,
 } from '../utils/tournamentHelpers';
 import { exportMasterFullBackup } from '../utils/excelMasterHelper';
 import {
@@ -128,6 +131,27 @@ interface TournamentContextType {
   brackets: Bracket[];
   generateBracketForCategory: (categoryId: string, randomize?: boolean) => { success: boolean; error?: string; bracket?: Bracket };
   regenerateBracketForCategory: (categoryId: string, reason: string) => { success: boolean; error?: string };
+  updateBracketFixture: (
+    bracketId: string,
+    updatedBracket: Bracket,
+    auditTarget: string,
+    auditDetails: string,
+    individualLogs?: { target: string; details: string; action?: AuditLog['action'] }[]
+  ) => { success: boolean; error?: string };
+  movePlayerInFixture: (
+    bracketId: string,
+    sourceBoutId: string,
+    sourceCorner: 'red' | 'blue',
+    destBoutId: string,
+    destCorner: 'red' | 'blue'
+  ) => { success: boolean; error?: string; updatedBracket?: Bracket };
+  swapPlayersInFixture: (
+    bracketId: string,
+    boutIdA: string,
+    cornerA: 'red' | 'blue',
+    boutIdB: string,
+    cornerB: 'red' | 'blue'
+  ) => { success: boolean; error?: string; updatedBracket?: Bracket };
   
   activeBoutForScoring: Bout | null;
   setActiveBoutForScoring: (bout: Bout | null) => void;
@@ -1184,6 +1208,217 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   };
 
+  // Super Admin Fixture Edit
+  const updateBracketFixture = (
+    bracketId: string,
+    updatedBracket: Bracket,
+    auditTarget: string,
+    auditDetails: string,
+    individualLogs?: { target: string; details: string; action?: AuditLog['action'] }[]
+  ): { success: boolean; error?: string } => {
+    if (role !== 'super_admin') {
+      return {
+        success: false,
+        error: 'Permission denied: Only Super Admin can edit generated tournament fixtures.',
+      };
+    }
+
+    const existingBracket = brackets.find(b => b.id === bracketId);
+    if (!existingBracket) {
+      return { success: false, error: 'Bracket not found.' };
+    }
+
+    // Update in-memory state immediately
+    setBrackets(prev => prev.map(b => (b.id === bracketId ? updatedBracket : b)));
+
+    // Sync to Supabase PostgreSQL database
+    supabaseUpsertBracket(updatedBracket);
+
+    // Record audit log entry: individual per modified bout if provided, plus overall summary
+    if (individualLogs && individualLogs.length > 0) {
+      individualLogs.forEach(entry => {
+        addAuditLog(entry.action || 'FIXTURE_EDIT', entry.target, entry.details);
+      });
+    } else {
+      addAuditLog('FIXTURE_EDIT', auditTarget, auditDetails);
+    }
+
+    return { success: true };
+  };
+
+  // Super Admin: Move Player Between Generated Bouts
+  const movePlayerInFixture = (
+    bracketId: string,
+    sourceBoutId: string,
+    sourceCorner: 'red' | 'blue',
+    destBoutId: string,
+    destCorner: 'red' | 'blue'
+  ): { success: boolean; error?: string; updatedBracket?: Bracket } => {
+    if (role !== 'super_admin') {
+      return {
+        success: false,
+        error: 'Permission denied: Only Super Admin can move fixture players.',
+      };
+    }
+
+    const currentBracket = brackets.find(b => b.id === bracketId);
+    if (!currentBracket) {
+      return { success: false, error: 'Bracket not found.' };
+    }
+
+    let sourceBout: Bout | null = null;
+    let destBout: Bout | null = null;
+
+    for (const r of currentBracket.rounds) {
+      for (const b of r.bouts) {
+        if (b.id === sourceBoutId) sourceBout = b;
+        if (b.id === destBoutId) destBout = b;
+      }
+    }
+
+    if (!sourceBout || !destBout) {
+      return { success: false, error: 'Source or destination bout not found.' };
+    }
+
+    const isSourceLocked =
+      sourceBout.resultLocked ||
+      sourceBout.status.startsWith('winner_') ||
+      sourceBout.status === 'completed' ||
+      sourceBout.status === 'live';
+    const isDestLocked =
+      destBout.resultLocked ||
+      destBout.status.startsWith('winner_') ||
+      destBout.status === 'completed' ||
+      destBout.status === 'live';
+
+    if (isSourceLocked || isDestLocked) {
+      return {
+        success: false,
+        error: 'This bout is locked because a result has already been submitted.',
+      };
+    }
+
+    const movingPlayerName =
+      sourceCorner === 'red' ? sourceBout.redPlayerName : sourceBout.bluePlayerName;
+
+    if (!movingPlayerName) {
+      return { success: false, error: 'No player found at source position.' };
+    }
+
+    const updatedBracket = applyMovePlayerInBracket(
+      currentBracket,
+      sourceBoutId,
+      sourceCorner,
+      destBoutId,
+      destCorner
+    );
+
+    // Validate duplicate protection
+    const dupCheck = validateBracketNoDuplicates(updatedBracket);
+    if (!dupCheck.isValid) {
+      return {
+        success: false,
+        error: `Player ${dupCheck.duplicatePlayerName} is already assigned to another active bout.`,
+      };
+    }
+
+    // Persist immediately to memory & Supabase
+    setBrackets(prev => prev.map(b => (b.id === bracketId ? updatedBracket : b)));
+    supabaseUpsertBracket(updatedBracket);
+
+    addAuditLog(
+      'FIXTURE_PLAYER_MOVE',
+      `Bout ${sourceBout.boutNumber} → ${destBout.boutNumber}`,
+      `Player: ${movingPlayerName}; From: ${sourceBout.boutNumber} ${sourceCorner.toUpperCase()}; To: ${destBout.boutNumber} ${destCorner.toUpperCase()}; User: ${currentUser.name}; Role: super_admin`
+    );
+
+    return { success: true, updatedBracket };
+  };
+
+  // Super Admin: Swap Two Players Between Bouts
+  const swapPlayersInFixture = (
+    bracketId: string,
+    boutIdA: string,
+    cornerA: 'red' | 'blue',
+    boutIdB: string,
+    cornerB: 'red' | 'blue'
+  ): { success: boolean; error?: string; updatedBracket?: Bracket } => {
+    if (role !== 'super_admin') {
+      return {
+        success: false,
+        error: 'Permission denied: Only Super Admin can swap fixture players.',
+      };
+    }
+
+    const currentBracket = brackets.find(b => b.id === bracketId);
+    if (!currentBracket) {
+      return { success: false, error: 'Bracket not found.' };
+    }
+
+    let boutA: Bout | null = null;
+    let boutB: Bout | null = null;
+
+    for (const r of currentBracket.rounds) {
+      for (const b of r.bouts) {
+        if (b.id === boutIdA) boutA = b;
+        if (b.id === boutIdB) boutB = b;
+      }
+    }
+
+    if (!boutA || !boutB) {
+      return { success: false, error: 'Target bouts not found.' };
+    }
+
+    const isALocked =
+      boutA.resultLocked ||
+      boutA.status.startsWith('winner_') ||
+      boutA.status === 'completed' ||
+      boutA.status === 'live';
+    const isBLocked =
+      boutB.resultLocked ||
+      boutB.status.startsWith('winner_') ||
+      boutB.status === 'completed' ||
+      boutB.status === 'live';
+
+    if (isALocked || isBLocked) {
+      return {
+        success: false,
+        error: 'This bout is locked because a result has already been submitted.',
+      };
+    }
+
+    const playerAName = cornerA === 'red' ? boutA.redPlayerName : boutA.bluePlayerName;
+    const playerBName = cornerB === 'red' ? boutB.redPlayerName : boutB.bluePlayerName;
+
+    const updatedBracket = applySwapPlayersInBracket(
+      currentBracket,
+      boutIdA,
+      cornerA,
+      boutIdB,
+      cornerB
+    );
+
+    // Validate duplicate protection
+    const dupCheck = validateBracketNoDuplicates(updatedBracket);
+    if (!dupCheck.isValid) {
+      return {
+        success: false,
+        error: `Player ${dupCheck.duplicatePlayerName} is already assigned to another active bout.`,
+      };
+    }
+
+    setBrackets(prev => prev.map(b => (b.id === bracketId ? updatedBracket : b)));
+    supabaseUpsertBracket(updatedBracket);
+
+    addAuditLog(
+      'FIXTURE_PLAYER_SWAP',
+      `Bout ${boutA.boutNumber} ⇄ ${boutB.boutNumber}`,
+      `${playerAName}: ${boutA.boutNumber} ${cornerA.toUpperCase()} → ${boutB.boutNumber} ${cornerB.toUpperCase()}; ${playerBName}: ${boutB.boutNumber} ${cornerB.toUpperCase()} → ${boutA.boutNumber} ${cornerA.toUpperCase()}; User: ${currentUser.name}; Role: super_admin`
+    );
+
+    return { success: true, updatedBracket };
+  };
+
   // Live scoring actions
   const recordBoutScoreEvent = (boutId: string, scoreEvent: Omit<ScoreEvent, 'id' | 'timestamp'>) => {
     if (role === 'general_view') return;
@@ -1935,6 +2170,9 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         brackets,
         generateBracketForCategory,
         regenerateBracketForCategory,
+        updateBracketFixture,
+        movePlayerInFixture,
+        swapPlayersInFixture,
         activeBoutForScoring,
         setActiveBoutForScoring,
         recordBoutScoreEvent,

@@ -18,6 +18,7 @@ import { MasterAdminPanel } from './components/master/MasterAdminPanel';
 import { InactiveEventLockoutView } from './components/common/InactiveEventLockoutView';
 import { LoginModal } from './components/auth/LoginModal';
 import { SupabaseSettingsModal } from './components/supabase/SupabaseSettingsModal';
+import { AboutUsView } from './components/about/AboutUsView';
 import { soundEffects } from './utils/soundEffects';
 import {
   LayoutDashboard,
@@ -54,6 +55,11 @@ const MainAppContent: React.FC = () => {
   };
 
   const renderContent = () => {
+    // About Us page is always publicly accessible without login or live event restriction
+    if (activeTab === 'about') {
+      return <AboutUsView />;
+    }
+
     // If user is not super_admin and current event is not live, block work on that event
     if (!canWorkOnEvent) {
       return <InactiveEventLockoutView />;
@@ -104,6 +110,8 @@ const MainAppContent: React.FC = () => {
         return <UserRoleManager />;
       case 'exports':
         return <ExportReportsView />;
+      case 'about':
+        return <AboutUsView />;
       default:
         return <PublicTournamentView />;
     }
@@ -194,7 +202,7 @@ const MainAppContent: React.FC = () => {
         <button
           onClick={() => setMobileDrawerOpen(true)}
           className={`flex flex-col items-center gap-1 p-1 ${
-            mobileDrawerOpen || ['categories', 'results', 'events', 'audit', 'users', 'exports', 'master-panel', 'public'].includes(activeTab)
+            mobileDrawerOpen || ['categories', 'results', 'events', 'audit', 'users', 'exports', 'master-panel', 'public', 'about'].includes(activeTab)
               ? 'text-amber-400 font-semibold'
               : 'text-slate-400'
           }`}

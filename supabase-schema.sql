@@ -172,7 +172,11 @@ CREATE POLICY "Allow full access for all operations" ON public.age_categories FO
 CREATE POLICY "Allow full access for all operations" ON public.weight_categories FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
 CREATE POLICY "Allow full access for all operations" ON public.players FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
 CREATE POLICY "Allow full access for all operations" ON public.categories FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
-CREATE POLICY "Allow full access for all operations" ON public.brackets FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
+-- Brackets RLS: Viewable by all; INSERT/UPDATE/DELETE strictly restricted to super_admin
+CREATE POLICY "Allow read brackets for all roles" ON public.brackets FOR SELECT TO anon, authenticated, service_role, public USING (true);
+CREATE POLICY "Allow super_admin to insert brackets" ON public.brackets FOR INSERT TO anon, authenticated, service_role WITH CHECK (EXISTS (SELECT 1 FROM public.tournament_users WHERE role = 'super_admin'));
+CREATE POLICY "Allow super_admin to update brackets" ON public.brackets FOR UPDATE TO anon, authenticated, service_role USING (EXISTS (SELECT 1 FROM public.tournament_users WHERE role = 'super_admin')) WITH CHECK (EXISTS (SELECT 1 FROM public.tournament_users WHERE role = 'super_admin'));
+CREATE POLICY "Allow super_admin to delete brackets" ON public.brackets FOR DELETE TO anon, authenticated, service_role USING (EXISTS (SELECT 1 FROM public.tournament_users WHERE role = 'super_admin'));
 CREATE POLICY "Allow full access for all operations" ON public.tournament_users FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
 CREATE POLICY "Allow full access for all operations" ON public.audit_logs FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
 
