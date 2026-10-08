@@ -1,8 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useTournament } from '../../context/TournamentContext';
 import { Bracket, Bout, Category, Player, AuditLog } from '../../types/tournament';
 import { FixtureEditModal } from './FixtureEditModal';
 import { MovePlayerModal } from './MovePlayerModal';
+import {
+  downloadTreeAsPng,
+  downloadTreeAsPdf,
+  downloadFullFixtureReportPdf,
+  generatePlainTextFixture,
+  downloadPlainTextFixture,
+  downloadTraditionalTreePdf,
+} from '../../utils/treeExportHelper';
 import {
   applyMovePlayerInBracket,
   applySwapPlayersInBracket,
@@ -28,6 +36,14 @@ import {
   X,
   Check,
   ArrowRightLeft,
+  Download,
+  Image as ImageIcon,
+  FileText,
+  ChevronDown,
+  Loader2,
+  Copy,
+  FileCode,
+  Code2,
 } from 'lucide-react';
 
 export const BracketViewer: React.FC = () => {
@@ -129,6 +145,102 @@ export const BracketViewer: React.FC = () => {
     }
     setRegenModalOpen(false);
     setRegenReason('');
+  };
+
+  // --- Tree Export & Print System ---
+  const bracketCanvasRef = useRef<HTMLDivElement>(null);
+  const [exportLoading, setExportLoading] = useState<false | 'full_pdf' | 'tree_pdf' | 'traditional_pdf' | 'png' | 'txt'>(false);
+  const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
+  const [fixtureViewMode, setFixtureViewMode] = useState<'arena' | 'plaintext'>('arena');
+  const [copyTextSuccess, setCopyTextSuccess] = useState(false);
+
+  // Copy Plain Text Tree diagram to clipboard (matching user's screenshot format)
+  const handleCopyPlainText = () => {
+    if (!currentBracket) return;
+    const text = generatePlainTextFixture(currentBracket, currentCategory, event);
+    navigator.clipboard.writeText(text);
+    setCopyTextSuccess(true);
+    showSuccessFeedback('Plain text tournament tree copied to clipboard!');
+    setTimeout(() => setCopyTextSuccess(false), 3000);
+  };
+
+  // Download Plain Text (.txt) file directly matching user's screenshot format
+  const handleDownloadPlainText = () => {
+    if (!currentBracket) return;
+    setExportDropdownOpen(false);
+    downloadPlainTextFixture(currentBracket, currentCategory, event);
+    showSuccessFeedback('Plain text tournament tree fixture downloaded (.txt)!');
+  };
+
+  // Download Traditional Line-Tree PDF
+  const handleDownloadTraditionalPdf = () => {
+    if (!currentBracket) return;
+    setExportDropdownOpen(false);
+    downloadTraditionalTreePdf(currentBracket, currentCategory, event);
+    showSuccessFeedback('Traditional Line-Tree Bracket downloaded (PDF)!');
+  };
+
+  // Download Complete Multi-Page Official Championship Report (Tree + Match Tables + Roster + Signatures)
+  const handleDownloadFullReport = async () => {
+    setExportDropdownOpen(false);
+    setExportLoading('full_pdf');
+    try {
+      await downloadFullFixtureReportPdf(
+        bracketCanvasRef.current,
+        currentCategory,
+        currentBracket,
+        event,
+        players
+      );
+      showSuccessFeedback('Official Championship Fixture Report downloaded (Full PDF Booklet)!');
+    } catch (err) {
+      console.error(err);
+      setErrorMessage('Failed to generate full fixture report. Please try again.');
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const handleDownloadPng = async () => {
+    if (!bracketCanvasRef.current) return;
+    setExportDropdownOpen(false);
+    setExportLoading('png');
+    try {
+      await downloadTreeAsPng(
+        bracketCanvasRef.current,
+        currentCategory?.name || 'Category',
+        event.name
+      );
+      showSuccessFeedback('Knockout tree fixture downloaded as high-resolution PNG image!');
+    } catch (err) {
+      console.error(err);
+      setErrorMessage('Failed to export tree image. Please try again.');
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const handleDownloadTreePdf = async () => {
+    if (!bracketCanvasRef.current) return;
+    setExportDropdownOpen(false);
+    setExportLoading('tree_pdf');
+    try {
+      await downloadTreeAsPdf(
+        bracketCanvasRef.current,
+        currentCategory,
+        event
+      );
+      showSuccessFeedback('Knockout tree fixture downloaded as landscape PDF sheet!');
+    } catch (err) {
+      console.error(err);
+      setErrorMessage('Failed to generate tree PDF. Please try again.');
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const handlePrintTree = () => {
+    window.print();
   };
 
   // --- Fixture Edit Mode Handlers ---
@@ -513,7 +625,7 @@ export const BracketViewer: React.FC = () => {
       )}
 
       {/* Header & Category Selector Bar */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      <div className="no-print flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
             <GitFork className="w-5 h-5 text-amber-400" />
@@ -577,19 +689,167 @@ export const BracketViewer: React.FC = () => {
             </button>
           )}
 
-          <button
-            onClick={() => window.print()}
-            className="px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-lg border border-slate-800 transition-colors flex items-center gap-1.5 cursor-pointer"
-          >
-            <Printer className="w-3.5 h-3.5 text-slate-400" />
-            <span>Print Tree</span>
-          </button>
+          {/* View Mode Toggle: Arena Tree vs. Tree Fixture Sheet */}
+          {currentOriginalBracket && !isEditMode && (
+            <div className="flex items-center p-0.5 bg-slate-900 border border-slate-800 rounded-lg">
+              <button
+                type="button"
+                onClick={() => setFixtureViewMode('arena')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
+                  fixtureViewMode === 'arena'
+                    ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="View interactive arena knockout tree"
+              >
+                <GitFork className="w-3.5 h-3.5" />
+                <span>Arena Tree</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFixtureViewMode('plaintext')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
+                  fixtureViewMode === 'plaintext'
+                    ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="View clean downloadable tree fixture sheet"
+              >
+                <Code2 className="w-3.5 h-3.5" />
+                <span>Tree Fixture Sheet</span>
+              </button>
+            </div>
+          )}
+
+          {/* Download Tree Dropdown (All Official Formats) */}
+          {currentOriginalBracket && !isEditMode && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
+                disabled={exportLoading !== false}
+                className="px-3 py-1.5 text-xs font-semibold text-slate-200 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-lg border border-slate-700/80 hover:border-amber-500/50 transition-all flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                title="Download tournament fixture report and tree diagrams"
+              >
+                {exportLoading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                ) : (
+                  <FileText className="w-3.5 h-3.5 text-amber-400" />
+                )}
+                <span>{exportLoading ? 'Generating...' : 'Download Fixtures'}</span>
+                <ChevronDown className="w-3 h-3 text-slate-400" />
+              </button>
+
+              {exportDropdownOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setExportDropdownOpen(false)}
+                  />
+                  <div className="absolute right-0 mt-1 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-150">
+                    {/* OPTION 1: FULL REPORT PDF (MOST COMPREHENSIVE) */}
+                    <button
+                      type="button"
+                      onClick={handleDownloadFullReport}
+                      className="w-full text-left px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-800 rounded-lg transition-colors flex items-start gap-2.5 cursor-pointer group bg-amber-500/10 border border-amber-500/20 mb-1"
+                    >
+                      <FileText className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-bold text-white flex items-center gap-1.5">
+                          <span>Full Fixture Report (PDF)</span>
+                          <span className="text-[9px] px-1.5 py-0.2 bg-amber-500 text-slate-950 rounded font-black">
+                            FULL
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-300 mt-0.5 leading-snug">
+                          Multi-page booklet: Bracket Tree, Match Schedules, Athletes Roster & Certified Sign-off
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* OPTION 2: TRADITIONAL LINE TREE BRACKET (LANDSCAPE PDF) */}
+                    <button
+                      type="button"
+                      onClick={handleDownloadTraditionalPdf}
+                      className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-800 rounded-lg transition-colors flex items-start gap-2.5 cursor-pointer group"
+                    >
+                      <Download className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-semibold text-white">Traditional Line Tree (PDF)</div>
+                        <div className="text-[10px] text-slate-400 leading-snug">
+                          Clean vector printable line bracket with official referee sign-off
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* OPTION 3: PLAIN TEXT BRACKET TREE (.TXT) */}
+                    <button
+                      type="button"
+                      onClick={handleDownloadPlainText}
+                      className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-800 rounded-lg transition-colors flex items-start gap-2.5 cursor-pointer group"
+                    >
+                      <FileCode className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-semibold text-white">Plain Text Tree (.txt File)</div>
+                        <div className="text-[10px] text-slate-400 leading-snug">
+                          Exact &lt;/&gt; Plain text ASCII box-drawing fixture tree diagram
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* OPTION 4: BRACKET TREE DIAGRAM (PDF) */}
+                    <button
+                      type="button"
+                      onClick={handleDownloadTreePdf}
+                      className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-800 rounded-lg transition-colors flex items-start gap-2.5 cursor-pointer group"
+                    >
+                      <Download className="w-4 h-4 text-rose-400 group-hover:scale-110 transition-transform shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-semibold text-white">Visual Arena Tree (PDF)</div>
+                        <div className="text-[10px] text-slate-400 leading-snug">
+                          Single-sheet landscape visual tree progression diagram
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* OPTION 5: BRACKET TREE PNG */}
+                    <button
+                      type="button"
+                      onClick={handleDownloadPng}
+                      className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-800 rounded-lg transition-colors flex items-start gap-2.5 cursor-pointer group mt-0.5"
+                    >
+                      <ImageIcon className="w-4 h-4 text-sky-400 group-hover:scale-110 transition-transform shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-semibold text-white">Bracket Tree Image (PNG)</div>
+                        <div className="text-[10px] text-slate-400 leading-snug">
+                          Ultra-sharp 2x graphic for screens & coach sharing
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Print Full Report Button */}
+          {currentOriginalBracket && !isEditMode && (
+            <button
+              type="button"
+              onClick={handlePrintTree}
+              className="px-3 py-1.5 text-xs font-semibold text-slate-200 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-lg border border-slate-700/80 hover:border-amber-500/50 transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+              title="Print official tournament fixture report sheet"
+            >
+              <Printer className="w-3.5 h-3.5 text-amber-400" />
+              <span>Print Sheet</span>
+            </button>
+          )}
         </div>
       </div>
 
       {/* SUPER ADMIN FIXTURE EDIT MODE BANNER */}
       {isEditMode && (
-        <div className="p-4 sm:p-5 bg-gradient-to-r from-amber-500/20 via-slate-900 to-amber-500/10 border-2 border-amber-500/60 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xl animate-in fade-in duration-200">
+        <div className="no-print p-4 sm:p-5 bg-gradient-to-r from-amber-500/20 via-slate-900 to-amber-500/10 border-2 border-amber-500/60 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xl animate-in fade-in duration-200">
           <div className="flex items-center gap-3.5">
             <div className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-bold shrink-0 shadow-lg shadow-amber-500/30">
               <Sliders className="w-5 h-5" />
@@ -628,11 +888,163 @@ export const BracketViewer: React.FC = () => {
         </div>
       )}
 
-      {/* Main Bracket Canvas */}
+      {/* Main Bracket Canvas or Tree Fixture Sheet View */}
       {currentBracket ? (
-        <div className={`bg-slate-900/90 border rounded-2xl p-6 shadow-xl overflow-x-auto print-card transition-all ${
-          isEditMode ? 'border-amber-500/40 ring-1 ring-amber-500/20' : 'border-slate-800'
-        }`}>
+        fixtureViewMode === 'plaintext' ? (
+          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5 print-card">
+            {/* Plain Text Fixture Toolbar & Header */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-slate-800 gap-3">
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30 mb-1">
+                  <Code2 className="w-3.5 h-3.5 text-amber-400" />
+                  <span>&lt;/&gt; Plain text Knockout Tree</span>
+                </div>
+                <h2 className="text-lg font-bold text-white font-cinzel">
+                  {event.name || 'WUSHU SANDA NATIONAL CHAMPIONSHIP'}
+                </h2>
+                <div className="text-xs text-slate-400 mt-0.5 flex flex-wrap items-center gap-2">
+                  <span>Division: <strong className="text-amber-400">{currentCategory?.name}</strong></span>
+                  <span aria-hidden="true" className="text-slate-700">·</span>
+                  <span>{event.venue || 'Leitai Arena'}</span>
+                  <span aria-hidden="true" className="text-slate-700">·</span>
+                  <span>{new Date(event.startDate || Date.now()).toLocaleDateString()}</span>
+                  <span aria-hidden="true" className="text-slate-700">·</span>
+                  <span className="text-emerald-400 font-medium">Standard Single-Elimination Knockout Fixture</span>
+                </div>
+              </div>
+
+              <div className="no-print flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyPlainText}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
+                  title="Copy exact plain text diagram to clipboard"
+                >
+                  {copyTextSuccess ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-400 font-bold">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Copy Text</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadPlainText}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
+                  title="Download .txt diagram file"
+                >
+                  <FileCode className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Download .txt</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadTraditionalPdf}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
+                  title="Download vector line-tree PDF sheet"
+                >
+                  <Download className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Download PDF</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadFullReport}
+                  disabled={exportLoading !== false}
+                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                  title="Download complete multi-page tournament booklet"
+                >
+                  <FileText className="w-3.5 h-3.5 text-slate-950" />
+                  <span>Full Report PDF</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePrintTree}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
+                  title="Print fixture tree sheet"
+                >
+                  <Printer className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Print Sheet</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Tree Monospace Preformatted View */}
+            <div className="overflow-x-auto rounded-xl bg-slate-950 p-6 border border-slate-800 text-xs text-slate-200 select-all font-mono leading-relaxed whitespace-pre font-mono-tabular">
+              {generatePlainTextFixture(currentBracket, currentCategory, event)}
+            </div>
+
+            {/* Official Certification Signature Block */}
+            <div className="mt-8 pt-5 border-t border-slate-800/80 text-xs text-slate-400">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
+                <div>
+                  <div className="h-8 border-b border-dashed border-slate-700 max-w-xs mx-auto mb-1.5"></div>
+                  <div className="font-bold text-slate-300 text-xs">Chief Referee Signature</div>
+                  <div className="text-[10px] text-slate-500">Official IWUF Leitai Jury of Appeal</div>
+                </div>
+                <div>
+                  <div className="h-8 border-b border-dashed border-slate-700 max-w-xs mx-auto mb-1.5"></div>
+                  <div className="font-bold text-slate-300 text-xs">President of Jury of Appeal</div>
+                  <div className="text-[10px] text-slate-500">Technical Delegate Seal</div>
+                </div>
+                <div>
+                  <div className="h-8 border-b border-dashed border-slate-700 max-w-xs mx-auto mb-1.5"></div>
+                  <div className="font-bold text-slate-300 text-xs">Tournament Director Signature</div>
+                  <div className="text-[10px] text-slate-500 font-mono-tabular">
+                    {new Date().toLocaleDateString()} · Certified Fixtures
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+        <>
+          <div
+            ref={bracketCanvasRef}
+            className={`bg-slate-900/90 border rounded-2xl p-6 shadow-xl overflow-x-auto print-card transition-all ${
+            isEditMode ? 'border-amber-500/40 ring-1 ring-amber-500/20' : 'border-slate-800'
+          }`}
+        >
+          {/* Official Tournament Masthead Banner (Included in Prints & Downloads) */}
+          <div className="pb-4 mb-5 border-b border-slate-800/80">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-bold text-amber-500 tracking-wider uppercase font-cinzel">
+                  {event.organizer || 'Official Wushu Sanda Federation'}
+                </div>
+                <h2 className="text-lg md:text-xl font-black text-white tracking-tight font-cinzel mt-0.5">
+                  {event.name || 'WUSHU SANDA NATIONAL CHAMPIONSHIP'}
+                </h2>
+                <div className="text-xs text-slate-400 mt-0.5 flex flex-wrap items-center gap-2">
+                  <span>{event.venue || 'Main Stadium'}, {event.city || 'Arena'}</span>
+                  <span aria-hidden="true" className="text-slate-700">·</span>
+                  <span>{new Date(event.startDate || Date.now()).toLocaleDateString()}</span>
+                  <span aria-hidden="true" className="text-slate-700">·</span>
+                  <span className="text-amber-400 font-semibold">Single-Elimination Knockout Fixture Tree</span>
+                </div>
+              </div>
+
+              <div className="text-left md:text-right bg-slate-950/80 border border-slate-800/80 rounded-xl px-3.5 py-2">
+                <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
+                  Championship Division
+                </div>
+                <div className="text-sm font-black text-amber-400 font-cinzel">
+                  {currentCategory?.name}
+                </div>
+                <div className="text-[10px] text-slate-400 font-mono-tabular mt-0.5">
+                  Ring / Leitai: {currentBracket.rounds[0]?.bouts[0]?.ring || 'Platform 1'} · Best of 3 Rounds
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Tournament Tree Top Info */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 mb-6 border-b border-slate-800/80 gap-3">
             <div>
@@ -767,7 +1179,7 @@ export const BracketViewer: React.FC = () => {
                                     e.stopPropagation();
                                     handleOpenMoveModal(bout, 'red');
                                   }}
-                                  className="px-2 py-0.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded text-[10px] shrink-0 transition-colors shadow-xs flex items-center gap-1 cursor-pointer"
+                                  className="no-print no-export px-2 py-0.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded text-[10px] shrink-0 transition-colors shadow-xs flex items-center gap-1 cursor-pointer"
                                   title={`Move ${bout.redPlayerName} to another bout`}
                                 >
                                   <ArrowRightLeft className="w-2.5 h-2.5" />
@@ -807,7 +1219,7 @@ export const BracketViewer: React.FC = () => {
                                     e.stopPropagation();
                                     handleOpenMoveModal(bout, 'blue');
                                   }}
-                                  className="px-2 py-0.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded text-[10px] shrink-0 transition-colors shadow-xs flex items-center gap-1 cursor-pointer"
+                                  className="no-print no-export px-2 py-0.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded text-[10px] shrink-0 transition-colors shadow-xs flex items-center gap-1 cursor-pointer"
                                   title={`Move ${bout.bluePlayerName} to another bout`}
                                 >
                                   <ArrowRightLeft className="w-2.5 h-2.5" />
@@ -828,7 +1240,7 @@ export const BracketViewer: React.FC = () => {
                               )}
                             </div>
 
-                            <div className="flex items-center gap-1.5 shrink-0">
+                            <div className="no-print no-export flex items-center gap-1.5 shrink-0">
                               {/* If in edit mode: show Edit indicator */}
                               {isEditMode ? (
                                 isCompleted ? (
@@ -935,8 +1347,258 @@ export const BracketViewer: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* Official Printable Signature & Verification Block */}
+          <div className="mt-8 pt-5 border-t border-slate-800/80 text-xs text-slate-400">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-6 px-2">
+              <div className="flex-1 w-full text-center sm:text-left">
+                <div className="h-8 border-b border-dashed border-slate-700 max-w-xs mb-1.5"></div>
+                <div className="font-bold text-slate-300 text-xs">Chief Referee Signature</div>
+                <div className="text-[10px] text-slate-500">Official IWUF Leitai Jury of Appeal</div>
+              </div>
+              <div className="flex-1 w-full text-center">
+                <div className="h-8 border-b border-dashed border-slate-700 max-w-xs mx-auto mb-1.5"></div>
+                <div className="font-bold text-slate-300 text-xs">Tournament Director Signature</div>
+                <div className="text-[10px] text-slate-500">Super Admin Fixture Authorization</div>
+              </div>
+              <div className="flex-1 w-full text-center sm:text-right">
+                <div className="h-8 border-b border-dashed border-slate-700 max-w-xs sm:ml-auto mb-1.5"></div>
+                <div className="font-bold text-slate-300 text-xs">Official Seal & Timestamp</div>
+                <div className="text-[10px] text-slate-500 font-mono-tabular">
+                  {new Date().toLocaleDateString()} · Official Arena Bracket
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-      ) : (
+
+        {/* OFFICIAL CHAMPIONSHIP FIXTURES & MATCH SCHEDULE REPORT TABLE (Complete Official Report Section) */}
+        {!isEditMode && currentBracket && (
+          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6 print-report-card">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800 gap-3">
+              <div>
+                <div className="text-[10px] uppercase font-bold text-amber-500 tracking-wider">
+                  Official Match Schedule & Order of Play
+                </div>
+                <h3 className="text-base font-bold text-white font-cinzel">
+                  Championship Fixtures Report ({currentCategory?.name})
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Certified bout pairings, Leitai platform schedules, and stage progressions under IWUF Technical Rules.
+                </p>
+              </div>
+
+              <div className="no-print flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadTraditionalPdf}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
+                  title="Download vector line-tree PDF sheet"
+                >
+                  <Download className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Line Tree PDF</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadPlainText}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
+                  title="Download .txt tree diagram"
+                >
+                  <FileCode className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Plain Text .txt</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadFullReport}
+                  disabled={exportLoading !== false}
+                  className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-md shadow-amber-500/20 cursor-pointer disabled:opacity-50"
+                  title="Download complete multi-page PDF booklet"
+                >
+                  <FileText className="w-3.5 h-3.5 text-slate-950" />
+                  <span>Full PDF Report</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePrintTree}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
+                  title="Print official tournament fixture report sheet"
+                >
+                  <Printer className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Print Sheet</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Stage-by-Stage Bout Schedule */}
+            <div className="space-y-6">
+              {currentBracket.rounds.map((round, rIdx) => (
+                <div key={round.roundName} className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-400 font-cinzel tracking-wider uppercase">
+                      Stage {rIdx + 1}: {round.roundName}
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-mono-tabular">
+                      {round.bouts.length} {round.bouts.length === 1 ? 'Bout' : 'Bouts'}
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/60">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-900/90 text-slate-400 border-b border-slate-800 text-[10px] uppercase tracking-wider font-semibold">
+                        <tr>
+                          <th className="py-2.5 px-3 font-mono-tabular">Bout #</th>
+                          <th className="py-2.5 px-3 text-red-400">Red Corner (Hong)</th>
+                          <th className="py-2.5 px-2 text-center">vs</th>
+                          <th className="py-2.5 px-3 text-blue-400">Blue Corner (Hei)</th>
+                          <th className="py-2.5 px-3">Platform</th>
+                          <th className="py-2.5 px-3">Time</th>
+                          <th className="py-2.5 px-3">Result / Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60">
+                        {round.bouts.map(b => {
+                          const isCompleted = b.status.startsWith('winner_') || b.status === 'completed';
+                          const winner = b.winnerCorner === 'red' ? b.redPlayerName : b.bluePlayerName;
+
+                          return (
+                            <tr key={b.id} className="hover:bg-slate-900/40 transition-colors">
+                              <td className="py-2.5 px-3 font-mono-tabular font-bold text-amber-400">
+                                {b.boutNumber}
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <div className="font-semibold text-slate-100">
+                                  {b.redPlayerName || (b.isBye && !b.redPlayerId ? '— BYE —' : 'Awaiting Winner')}
+                                </div>
+                                {b.redClub && <div className="text-[10px] text-slate-400">{b.redClub}</div>}
+                              </td>
+                              <td className="py-2.5 px-2 text-center text-slate-500 font-bold text-[10px]">
+                                VS
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <div className="font-semibold text-slate-100">
+                                  {b.bluePlayerName || (b.isBye && !b.bluePlayerId ? '— BYE —' : 'Awaiting Winner')}
+                                </div>
+                                {b.blueClub && <div className="text-[10px] text-slate-400">{b.blueClub}</div>}
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-400 font-mono-tabular">
+                                {b.ring}
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-400 font-mono-tabular">
+                                {b.scheduledTime || 'TBD'}
+                              </td>
+                              <td className="py-2.5 px-3">
+                                {b.isBye ? (
+                                  <span className="text-[11px] text-slate-400 font-medium">
+                                    BYE (Advanced)
+                                  </span>
+                                ) : isCompleted ? (
+                                  <div>
+                                    <span className="text-emerald-400 font-bold">
+                                      {b.winnerCorner?.toUpperCase()}: {winner}
+                                    </span>
+                                    {b.winningReason && (
+                                      <span className="text-[10px] text-slate-400 ml-1">
+                                        ({b.winningReason})
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : b.status === 'live' ? (
+                                  <span className="text-red-400 font-bold animate-pulse">
+                                    LIVE IN PROGRESS
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-500">Scheduled</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Division Registered Athletes Roster */}
+            {(() => {
+              const divisionPlayers = players.filter(p => currentCategory?.eligiblePlayerIds?.includes(p.id));
+              if (divisionPlayers.length === 0) return null;
+
+              return (
+                <div className="pt-4 border-t border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white font-cinzel uppercase tracking-wider">
+                      Official Division Athletes Roster ({divisionPlayers.length} Fighters)
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/60">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-900/90 text-slate-400 border-b border-slate-800 text-[10px] uppercase tracking-wider font-semibold">
+                        <tr>
+                          <th className="py-2.5 px-3 font-mono-tabular">Seed #</th>
+                          <th className="py-2.5 px-3">Fighter Name</th>
+                          <th className="py-2.5 px-3">Reg. Number</th>
+                          <th className="py-2.5 px-3">Club / District</th>
+                          <th className="py-2.5 px-3">Gender</th>
+                          <th className="py-2.5 px-3">Weight</th>
+                          <th className="py-2.5 px-3">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60">
+                        {divisionPlayers.map((p, idx) => (
+                          <tr key={p.id} className="hover:bg-slate-900/40 transition-colors">
+                            <td className="py-2 px-3 font-mono-tabular text-slate-400">#{idx + 1}</td>
+                            <td className="py-2 px-3 font-bold text-white">{p.name}</td>
+                            <td className="py-2 px-3 text-slate-400 font-mono-tabular">{p.registrationNumber || '-'}</td>
+                            <td className="py-2 px-3 text-slate-300">{p.clubSchool || p.district || '-'}</td>
+                            <td className="py-2 px-3 text-slate-400 uppercase">{p.gender}</td>
+                            <td className="py-2 px-3 text-slate-300 font-mono-tabular">{p.weightKg} kg</td>
+                            <td className="py-2 px-3">
+                              <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium uppercase">
+                                {p.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Bottom Federation Certification Sign-off Block */}
+            <div className="pt-6 border-t border-slate-800 text-xs text-slate-400">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
+                <div>
+                  <div className="h-9 border-b border-dashed border-slate-700 max-w-xs mx-auto mb-1.5"></div>
+                  <div className="font-bold text-slate-300 text-xs">Chief Referee / Head Mat Official</div>
+                  <div className="text-[10px] text-slate-500">Official IWUF Leitai Jury of Appeal</div>
+                </div>
+                <div>
+                  <div className="h-9 border-b border-dashed border-slate-700 max-w-xs mx-auto mb-1.5"></div>
+                  <div className="font-bold text-slate-300 text-xs">President of Jury of Appeal</div>
+                  <div className="text-[10px] text-slate-500">Technical Delegate Seal</div>
+                </div>
+                <div>
+                  <div className="h-9 border-b border-dashed border-slate-700 max-w-xs mx-auto mb-1.5"></div>
+                  <div className="font-bold text-slate-300 text-xs">Tournament Director Signature</div>
+                  <div className="text-[10px] text-slate-500 font-mono-tabular">
+                    {new Date().toLocaleDateString()} · Certified Fixtures
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
+      )
+    ) : (
         <div className="p-12 text-center bg-slate-900/60 border border-dashed border-slate-800 rounded-2xl">
           <GitFork className="w-10 h-10 text-slate-600 mx-auto mb-3" />
           <h3 className="text-sm font-bold text-white mb-1">

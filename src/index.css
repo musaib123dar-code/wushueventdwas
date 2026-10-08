@@ -54,23 +54,132 @@
 
 /* Print styling for official scorecards and bracket sheets */
 @media print {
+  @page {
+    size: landscape;
+    margin: 8mm;
+  }
+
+  html,
   body {
     background: #ffffff !important;
-    color: #000000 !important;
+    color: #0f172a !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: auto !important;
   }
-  
-  .no-print {
+
+  header,
+  nav,
+  aside,
+  .no-print,
+  .no-export {
     display: none !important;
   }
-  
+
   .print-only {
     display: block !important;
   }
-  
+
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
   .print-card {
-    border: 1px solid #d1d5db !important;
+    border: 2px solid #334155 !important;
     background: #ffffff !important;
-    color: #111827 !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    max-width: none !important;
+    width: 100% !important;
+    page-break-inside: avoid;
     break-inside: avoid;
+    padding: 16px !important;
+  }
+
+  /* Make tree boxes crystal-clear on physical printer paper */
+  .print-card [class*="bg-slate-950"],
+  .print-card [class*="bg-slate-900"] {
+    background-color: #ffffff !important;
+    border-color: #94a3b8 !important;
+    color: #0f172a !important;
+  }
+
+  .print-card * {
+    color: #0f172a !important;
+    text-shadow: none !important;
+  }
+
+  .print-card .text-amber-400,
+  .print-card .text-amber-300,
+  .print-card .text-amber-500 {
+    color: #b45309 !important;
+  }
+
+  .print-card .text-red-400,
+  .print-card .text-red-500 {
+    color: #dc2626 !important;
+  }
+
+  .print-card .text-blue-400,
+  .print-card .text-blue-500 {
+    color: #2563eb !important;
+  }
+
+  .print-card .bg-red-500,
+  .print-card [class*="bg-red-"] {
+    background-color: #dc2626 !important;
+    color: #ffffff !important;
+  }
+
+  .print-card .bg-blue-500,
+  .print-card [class*="bg-blue-"] {
+    background-color: #2563eb !important;
+    color: #ffffff !important;
+  }
+
+  .print-card .border-slate-800,
+  .print-card [class*="border-slate-"] {
+    border-color: #cbd5e1 !important;
+  }
+
+  /* Full Championship Fixture Report print styling */
+  .print-report-card {
+    border: 1px solid #cbd5e1 !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+    padding: 16px !important;
+    page-break-before: always;
+    break-before: page;
+  }
+
+  .print-report-card * {
+    color: #0f172a !important;
+    text-shadow: none !important;
+  }
+
+  .print-report-card table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  .print-report-card th,
+  .print-report-card td {
+    border: 1px solid #cbd5e1 !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    padding: 6px !important;
+  }
+
+  .print-report-card thead th {
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+    font-weight: bold !important;
   }
 }

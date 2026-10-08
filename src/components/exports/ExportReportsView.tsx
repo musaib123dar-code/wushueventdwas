@@ -15,6 +15,7 @@ import {
   Check,
 } from 'lucide-react';
 import { exportCategoryFixturesPdf, exportAllFixturesPdf } from '../../utils/fixturesPdfExport';
+import { downloadTraditionalTreePdf, downloadPlainTextFixture } from '../../utils/plainTextFixtureGenerator';
 
 export const ExportReportsView: React.FC = () => {
   const { exportDataAsCSV, players, categories, brackets, auditLogs, event } = useTournament();
@@ -40,6 +41,22 @@ export const ExportReportsView: React.FC = () => {
     } finally {
       setDownloadingPdf(false);
     }
+  };
+
+  const handleExportTreePdf = () => {
+    const targetCat = categories.find(c => c.id === selectedCatId) || categories[0];
+    if (!targetCat) return;
+    const targetBracket = brackets.find(b => b.categoryId === targetCat.id);
+    if (!targetBracket) return;
+    downloadTraditionalTreePdf(targetBracket, targetCat, event);
+  };
+
+  const handleExportPlainText = () => {
+    const targetCat = categories.find(c => c.id === selectedCatId) || categories[0];
+    if (!targetCat) return;
+    const targetBracket = brackets.find(b => b.categoryId === targetCat.id);
+    if (!targetBracket) return;
+    downloadPlainTextFixture(targetBracket, targetCat, event);
   };
 
   const exportOptions = [
@@ -118,12 +135,12 @@ export const ExportReportsView: React.FC = () => {
           </div>
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
-            {/* Single Category Selector & PDF Button */}
-            <div className="flex items-center gap-2">
+            {/* Single Category Selector & PDF Buttons */}
+            <div className="flex flex-wrap items-center gap-2">
               <select
                 value={selectedCatId}
                 onChange={e => setSelectedCatId(e.target.value)}
-                className="bg-slate-950 border border-slate-700 hover:border-slate-600 text-slate-200 text-xs rounded-xl px-3 py-2.5 max-w-[200px] truncate focus:outline-none focus:border-amber-400 font-medium cursor-pointer"
+                className="bg-slate-950 border border-slate-700 hover:border-slate-600 text-slate-200 text-xs rounded-xl px-3 py-2.5 max-w-[180px] truncate focus:outline-none focus:border-amber-400 font-medium cursor-pointer"
                 title="Select division for single PDF sheet"
               >
                 {categories.map(cat => (
@@ -132,14 +149,35 @@ export const ExportReportsView: React.FC = () => {
                   </option>
                 ))}
               </select>
+
+              <button
+                onClick={handleExportTreePdf}
+                disabled={downloadingPdf || categories.length === 0}
+                className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-semibold rounded-xl text-xs flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer disabled:opacity-50"
+                title="Download Traditional Line Tree PDF sheet"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="whitespace-nowrap">Tree PDF</span>
+              </button>
+
+              <button
+                onClick={handleExportPlainText}
+                disabled={downloadingPdf || categories.length === 0}
+                className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-semibold rounded-xl text-xs flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer disabled:opacity-50"
+                title="Download Plain Text fixture file (.txt)"
+              >
+                <Download className="w-3.5 h-3.5 text-sky-400" />
+                <span className="whitespace-nowrap">Tree (.txt)</span>
+              </button>
+
               <button
                 onClick={handleExportSingleCategoryPdf}
                 disabled={downloadingPdf || categories.length === 0}
-                className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-semibold rounded-xl text-xs flex items-center gap-2 border border-slate-700 transition-colors cursor-pointer disabled:opacity-50"
-                title="Download single category division PDF"
+                className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-semibold rounded-xl text-xs flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer disabled:opacity-50"
+                title="Download single category division PDF schedule"
               >
                 <FileText className="w-3.5 h-3.5 text-amber-400" />
-                <span className="whitespace-nowrap">Division PDF</span>
+                <span className="whitespace-nowrap">Schedule PDF</span>
               </button>
             </div>
 
