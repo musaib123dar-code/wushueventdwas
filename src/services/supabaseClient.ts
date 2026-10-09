@@ -8,6 +8,7 @@ import {
   AuditLog,
   AgeCategory,
   WeightCategory,
+  SidelineJudgeScore,
 } from '../types/tournament';
 
 const STORAGE_URL_KEY = 'supabase_project_url';
@@ -423,9 +424,109 @@ export function mapRowToAuditLog(r: any): AuditLog {
   };
 }
 
+export function mapSidelineJudgeScoreToRow(s: SidelineJudgeScore) {
+  return {
+    id: s.id,
+    bout_id: s.boutId,
+    event_id: s.eventId,
+    arena: s.arena,
+    judge_id: s.judgeId,
+    judge_name: s.judgeName,
+    round_number: Number(s.roundNumber),
+    red_points: Number(s.redPoints) || 0,
+    blue_points: Number(s.bluePoints) || 0,
+    red_exits: Number(s.redExits) || 0,
+    blue_exits: Number(s.blueExits) || 0,
+    red_warnings: Number(s.redWarnings) || 0,
+    blue_warnings: Number(s.blueWarnings) || 0,
+    winner: s.winner || null,
+    score_events: Array.isArray(s.scoreEvents) ? s.scoreEvents : [],
+    is_submitted: Boolean(s.isSubmitted),
+    submitted_at: s.submittedAt || null,
+  };
+}
+
+export function mapRowToSidelineJudgeScore(r: any): SidelineJudgeScore {
+  return {
+    id: r.id,
+    boutId: r.bout_id,
+    eventId: r.event_id,
+    arena: r.arena,
+    judgeId: r.judge_id,
+    judgeName: r.judge_name || 'Judge',
+    roundNumber: Number(r.round_number) || 1,
+    redPoints: Number(r.red_points) || 0,
+    bluePoints: Number(r.blue_points) || 0,
+    redExits: Number(r.red_exits) || 0,
+    blueExits: Number(r.blue_exits) || 0,
+    redWarnings: Number(r.red_warnings) || 0,
+    blueWarnings: Number(r.blue_warnings) || 0,
+    winner: r.winner || undefined,
+    scoreEvents: safeJsonParse<any[]>(r.score_events, []),
+    isSubmitted: Boolean(r.is_submitted),
+    submittedAt: r.submitted_at || undefined,
+    updatedAt: r.updated_at || new Date().toISOString(),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // ATOMIC REAL-TIME SUPABASE CRUD OPERATIONS
 // ---------------------------------------------------------------------------
+
+// --- SIDELINE JUDGE SCORES ---
+export async function supabaseUpsertSidelineJudgeScore(
+  score: SidelineJudgeScore
+): Promise<{ success: boolean; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, error: 'Supabase client not initialized' };
+  try {
+    const row = mapSidelineJudgeScoreToRow(score);
+    const { error } = await client.from('sideline_judge_scores').upsert([row]);
+    if (error) {
+      console.error('Failed to upsert sideline judge score in Supabase:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to upsert sideline judge score in Supabase:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function supabaseBulkUpsertSidelineJudgeScores(
+  scores: SidelineJudgeScore[]
+): Promise<{ success: boolean; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client || scores.length === 0) return { success: true };
+  try {
+    const rows = scores.map(mapSidelineJudgeScoreToRow);
+    const { error } = await client.from('sideline_judge_scores').upsert(rows);
+    if (error) {
+      console.error('Failed to bulk upsert sideline judge scores in Supabase:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to bulk upsert sideline judge scores in Supabase:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function supabaseDeleteSidelineJudgeScore(
+  scoreId: string
+): Promise<{ success: boolean; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, error: 'Supabase client not initialized' };
+  try {
+    const { error } = await client.from('sideline_judge_scores').delete().eq('id', scoreId);
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
 
 // --- PLAYERS ---
 export async function supabaseUpsertPlayer(player: Player): Promise<{ success: boolean; error?: string }> {
@@ -708,6 +809,7 @@ export async function pushAllDataToSupabase(payload: {
   auditLogs: AuditLog[];
   ageCategories: AgeCategory[];
   weightCategories: WeightCategory[];
+  sidelineJudgeScores?: SidelineJudgeScore[];
 }): Promise<{ success: boolean; message: string; details?: any; isRlsError?: boolean }> {
   const client = getSupabaseClient();
   if (!client) {
@@ -824,6 +926,15 @@ export async function pushAllDataToSupabase(payload: {
       }
     }
 
+    // 9. Sideline Judge Scores
+    if (payload.sidelineJudgeScores && payload.sidelineJudgeScores.length > 0) {
+      const sjsRows = payload.sidelineJudgeScores.map(mapSidelineJudgeScoreToRow);
+      const { error: sjsErr } = await client.from('sideline_judge_scores').upsert(sjsRows);
+      if (sjsErr) {
+        console.warn('Sideline judge scores sync warning:', sjsErr.message);
+      }
+    }
+
     return {
       success: true,
       message: 'All tournament records synchronized to Supabase PostgreSQL database in real time!',
@@ -852,6 +963,7 @@ export async function pullAllDataFromSupabase(): Promise<{
     auditLogs?: AuditLog[];
     ageCategories?: AgeCategory[];
     weightCategories?: WeightCategory[];
+    sidelineJudgeScores?: SidelineJudgeScore[];
   };
 }> {
   const client = getSupabaseClient();
@@ -869,6 +981,7 @@ export async function pullAllDataFromSupabase(): Promise<{
       auditRes,
       ageRes,
       weightRes,
+      sidelineRes,
     ] = await Promise.all([
       client.from('events').select('*'),
       client.from('players').select('*'),
@@ -878,6 +991,7 @@ export async function pullAllDataFromSupabase(): Promise<{
       client.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(200),
       client.from('age_categories').select('*'),
       client.from('weight_categories').select('*'),
+      client.from('sideline_judge_scores').select('*'),
     ]);
 
     const resData: any = {};
@@ -912,6 +1026,10 @@ export async function pullAllDataFromSupabase(): Promise<{
 
     if (!weightRes.error && weightRes.data && weightRes.data.length > 0) {
       resData.weightCategories = weightRes.data.map(mapRowToWeightCategory);
+    }
+
+    if (!sidelineRes.error && sidelineRes.data) {
+      resData.sidelineJudgeScores = sidelineRes.data.map(mapRowToSidelineJudgeScore);
     }
 
     return {
@@ -974,6 +1092,11 @@ export function subscribeToSupabaseTournament(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'age_categories' },
         payload => onTableChange('age_categories', payload.eventType, payload.new, payload.old)
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sideline_judge_scores' },
+        payload => onTableChange('sideline_judge_scores', payload.eventType, payload.new, payload.old)
       )
       .subscribe((status, err) => {
         if (status === 'SUBSCRIBED') {

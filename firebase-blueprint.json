@@ -140,6 +140,32 @@
       },
       "required": ["id", "timestamp", "action"]
     },
+    "sidelineJudgeScores": {
+      "title": "SidelineJudgeScore",
+      "description": "Arena-restricted independent judge scorecards",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "boutId": { "type": "string" },
+        "eventId": { "type": "string" },
+        "arena": { "type": "string" },
+        "judgeId": { "type": "string" },
+        "judgeName": { "type": "string" },
+        "roundNumber": { "type": "number" },
+        "redPoints": { "type": "number" },
+        "bluePoints": { "type": "number" },
+        "redExits": { "type": "number" },
+        "blueExits": { "type": "number" },
+        "redWarnings": { "type": "number" },
+        "blueWarnings": { "type": "number" },
+        "winner": { "type": "string" },
+        "scoreEvents": { "type": "array" },
+        "isSubmitted": { "type": "boolean" },
+        "submittedAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "boutId", "arena", "judgeId", "roundNumber"]
+    },
     "systemState": {
       "title": "SystemState",
       "description": "Global tournament state snapshot and sync metadata",

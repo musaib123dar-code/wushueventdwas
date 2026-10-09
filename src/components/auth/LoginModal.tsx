@@ -148,6 +148,48 @@ export const LoginModal: React.FC = () => {
           </button>
         </form>
 
+        {/* Quick Demo Sign-In Selector for instant testing */}
+        <div className="pt-2 border-t border-slate-800 space-y-2">
+          <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider flex items-center justify-between">
+            <span>Quick Fill Credentials</span>
+            <span className="text-[9px] text-amber-400">Testing Helper</span>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+            <button
+              type="button"
+              onClick={() => { setCredential('judge1'); setPassword('judge123'); }}
+              className="p-1.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-lg text-left text-slate-300 hover:text-white transition-colors cursor-pointer"
+            >
+              <div className="font-bold text-amber-300">Judge 1 (Arena 1)</div>
+              <div className="text-[9px] text-slate-500 font-mono">judge1 / judge123</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setCredential('judge3'); setPassword('judge123'); }}
+              className="p-1.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-lg text-left text-slate-300 hover:text-white transition-colors cursor-pointer"
+            >
+              <div className="font-bold text-sky-300">Judge 1 (Arena 2)</div>
+              <div className="text-[9px] text-slate-500 font-mono">judge3 / judge123</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setCredential('unassigned'); setPassword('official123'); }}
+              className="p-1.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-lg text-left text-slate-300 hover:text-white transition-colors cursor-pointer"
+            >
+              <div className="font-bold text-rose-300">Unassigned Official</div>
+              <div className="text-[9px] text-slate-500 font-mono">unassigned / official123</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setCredential('superadmin'); setPassword('superadmin123'); }}
+              className="p-1.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-lg text-left text-slate-300 hover:text-white transition-colors cursor-pointer"
+            >
+              <div className="font-bold text-emerald-300">Super Admin</div>
+              <div className="text-[9px] text-slate-500 font-mono">superadmin / superadmin123</div>
+            </button>
+          </div>
+        </div>
+
         {/* Public spectator prompt */}
         <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 text-xs flex items-center justify-between text-slate-400">
           <div className="flex items-center gap-2">

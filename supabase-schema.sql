@@ -122,7 +122,29 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
   created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- 10. Grant Full Permissions to Public, Anon, Authenticated, and Service Role
+-- 10. Sideline Judge Scores Table
+CREATE TABLE IF NOT EXISTS public.sideline_judge_scores (
+  id TEXT PRIMARY KEY,
+  bout_id TEXT NOT NULL,
+  event_id TEXT NOT NULL,
+  arena TEXT NOT NULL,
+  judge_id TEXT NOT NULL,
+  judge_name TEXT NOT NULL,
+  round_number INTEGER NOT NULL,
+  red_points INTEGER DEFAULT 0,
+  blue_points INTEGER DEFAULT 0,
+  red_exits INTEGER DEFAULT 0,
+  blue_exits INTEGER DEFAULT 0,
+  red_warnings INTEGER DEFAULT 0,
+  blue_warnings INTEGER DEFAULT 0,
+  winner TEXT,
+  score_events JSONB DEFAULT '[]'::jsonb,
+  is_submitted BOOLEAN DEFAULT false,
+  submitted_at TEXT,
+  updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+-- 11. Grant Full Permissions to Public, Anon, Authenticated, and Service Role
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role, postgres;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role, postgres;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role, postgres;
@@ -141,6 +163,7 @@ ALTER TABLE public.categories DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.brackets DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tournament_users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sideline_judge_scores DISABLE ROW LEVEL SECURITY;
 
 -- If you prefer RLS enabled, open policies can also be applied cleanly:
 ALTER TABLE public.events ENABLE ROW LEVEL SECURITY;
@@ -151,6 +174,7 @@ ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.brackets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tournament_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sideline_judge_scores ENABLE ROW LEVEL SECURITY;
 
 -- Drop any previous restrictive policies
 DROP POLICY IF EXISTS "Allow full access for all operations" ON public.events;
@@ -161,6 +185,7 @@ DROP POLICY IF EXISTS "Allow full access for all operations" ON public.categorie
 DROP POLICY IF EXISTS "Allow full access for all operations" ON public.brackets;
 DROP POLICY IF EXISTS "Allow full access for all operations" ON public.tournament_users;
 DROP POLICY IF EXISTS "Allow full access for all operations" ON public.audit_logs;
+DROP POLICY IF EXISTS "Allow full access for all operations" ON public.sideline_judge_scores;
 
 DROP POLICY IF EXISTS "Enable read access for all users" ON public.players;
 DROP POLICY IF EXISTS "Enable insert for authenticated users only" ON public.players;
@@ -179,6 +204,7 @@ CREATE POLICY "Allow super_admin to update brackets" ON public.brackets FOR UPDA
 CREATE POLICY "Allow super_admin to delete brackets" ON public.brackets FOR DELETE TO anon, authenticated, service_role USING (EXISTS (SELECT 1 FROM public.tournament_users WHERE role = 'super_admin'));
 CREATE POLICY "Allow full access for all operations" ON public.tournament_users FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
 CREATE POLICY "Allow full access for all operations" ON public.audit_logs FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
+CREATE POLICY "Allow full access for all operations" ON public.sideline_judge_scores FOR ALL TO anon, authenticated, service_role, public USING (true) WITH CHECK (true);
 
 -- 12. Enable Full Replica Identity so Realtime broadcast includes complete row payloads
 ALTER TABLE public.events REPLICA IDENTITY FULL;
@@ -189,6 +215,7 @@ ALTER TABLE public.categories REPLICA IDENTITY FULL;
 ALTER TABLE public.brackets REPLICA IDENTITY FULL;
 ALTER TABLE public.tournament_users REPLICA IDENTITY FULL;
 ALTER TABLE public.audit_logs REPLICA IDENTITY FULL;
+ALTER TABLE public.sideline_judge_scores REPLICA IDENTITY FULL;
 
 -- 13. Enable Supabase Realtime Publication for Live Scoring & Instant Synchronization
 DO $$
@@ -215,6 +242,10 @@ BEGIN
   END;
   BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.audit_logs;
+  EXCEPTION WHEN others THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.sideline_judge_scores;
   EXCEPTION WHEN others THEN NULL;
   END;
   BEGIN

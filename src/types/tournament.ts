@@ -1,4 +1,4 @@
-export type UserRole = 'super_admin' | 'admin' | 'official' | 'general_view';
+export type UserRole = 'super_admin' | 'admin' | 'official' | 'sideline_judge' | 'general_view';
 
 export interface User {
   id: string;
@@ -116,6 +116,45 @@ export interface ScoreEvent {
   description: string;
 }
 
+export interface SidelineScoreEvent {
+  id: string;
+  roundNumber: number;
+  corner: 'red' | 'blue';
+  actionType:
+    | 'punch'
+    | 'kick_thigh'
+    | 'kick_body_head'
+    | 'sweep_takedown'
+    | 'fall_with_opponent'
+    | 'leitai_exit'
+    | 'warning'
+    | 'foul_penalty';
+  points: number;
+  timestamp: number;
+  description: string;
+}
+
+export interface SidelineJudgeScore {
+  id: string; // e.g. "sjs-${boutId}-${judgeId}-r${roundNumber}"
+  boutId: string;
+  eventId: string;
+  arena: string; // The arena/ring name (e.g. "Leitai 1 (Platform A)")
+  judgeId: string;
+  judgeName: string;
+  roundNumber: number;
+  redPoints: number;
+  bluePoints: number;
+  redExits: number;
+  blueExits: number;
+  redWarnings: number;
+  blueWarnings: number;
+  winner?: 'red' | 'blue' | 'draw';
+  scoreEvents: SidelineScoreEvent[];
+  isSubmitted: boolean;
+  submittedAt?: string;
+  updatedAt: string;
+}
+
 export interface BoutRound {
   roundNumber: number;
   redPoints: number;
@@ -199,6 +238,9 @@ export interface AuditLog {
     | 'FIXTURE_EDIT'
     | 'FIXTURE_PLAYER_MOVE'
     | 'FIXTURE_PLAYER_SWAP'
+    | 'SIDELINE_SCORE_SUBMIT'
+    | 'SIDELINE_SCORE_AMEND'
+    | 'SIDELINE_SCORE_RESET'
     | 'SYSTEM_RESET';
   target: string;
   details: string;

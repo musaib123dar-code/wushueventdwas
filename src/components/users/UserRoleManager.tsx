@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   KeyRound,
   X,
+  ClipboardCheck,
 } from 'lucide-react';
 
 export const UserRoleManager: React.FC = () => {
@@ -36,14 +37,14 @@ export const UserRoleManager: React.FC = () => {
     username: string;
     email: string;
     password: string;
-    role: 'admin' | 'official';
+    role: 'admin' | 'official' | 'sideline_judge';
     assignedRing: string;
   }>({
     name: '',
     username: '',
     email: '',
     password: '',
-    role: 'admin',
+    role: 'sideline_judge',
     assignedRing: event.rings[0] || 'Leitai 1 (Platform A)',
   });
 
@@ -60,7 +61,7 @@ export const UserRoleManager: React.FC = () => {
         </div>
         <h2 className="text-lg font-bold text-white">Super Admin Access Required</h2>
         <p className="text-xs text-slate-400">
-          Only the Super Admin is authorized to register tournament administrators and mat officials.
+          Only the Super Admin is authorized to register tournament administrators, mat officials, and sideline scorers.
         </p>
       </div>
     );
@@ -87,26 +88,38 @@ export const UserRoleManager: React.FC = () => {
       return;
     }
 
+    const isRingRole = newUserData.role === 'official' || newUserData.role === 'sideline_judge';
+    if (isRingRole && !newUserData.assignedRing) {
+      setFormError('Please select an assigned Leitai platform arena for this official.');
+      return;
+    }
+
     const res = addUser({
       name: newUserData.name.trim(),
       email: newUserData.email.trim() || `${newUserData.username.trim().toLowerCase()}@wushu.org`,
       username: (newUserData.username || newUserData.email.split('@')[0]).trim().toLowerCase(),
       password: newUserData.password.trim(),
-      role: newUserData.role, // strictly 'admin' | 'official'
-      ringAssignment: newUserData.role === 'official' ? newUserData.assignedRing : undefined,
-      assignedRing: newUserData.role === 'official' ? newUserData.assignedRing : undefined,
+      role: newUserData.role, // 'admin' | 'official' | 'sideline_judge'
+      ringAssignment: isRingRole ? newUserData.assignedRing : undefined,
+      assignedRing: isRingRole ? newUserData.assignedRing : undefined,
     });
 
     if (!res.success) {
       setFormError(res.error || 'Failed to register official.');
     } else {
-      setFormSuccess(`Successfully registered ${newUserData.name} as ${newUserData.role === 'admin' ? 'Tournament Admin' : 'Mat Official'}.`);
+      const roleLabel =
+        newUserData.role === 'admin'
+          ? 'Tournament Admin'
+          : newUserData.role === 'sideline_judge'
+          ? 'Sideline Scorer'
+          : 'Mat Official';
+      setFormSuccess(`Successfully registered ${newUserData.name} as ${roleLabel} (${isRingRole ? newUserData.assignedRing : 'All Platforms'}).`);
       setNewUserData({
         name: '',
         username: '',
         email: '',
         password: '',
-        role: 'admin',
+        role: 'sideline_judge',
         assignedRing: event.rings[0] || 'Leitai 1 (Platform A)',
       });
       setTimeout(() => {
@@ -134,7 +147,7 @@ export const UserRoleManager: React.FC = () => {
             Official Account & Role Registration
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
-            Super Admin Portal: Register Tournament Administrators and Mat Officials with credentials.
+            Super Admin Portal: Register Tournament Administrators, Mat Officials, and Side Scorers with credentials.
           </p>
         </div>
 
@@ -152,7 +165,7 @@ export const UserRoleManager: React.FC = () => {
       </div>
 
       {/* Role Isolation Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
         <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-1.5">
           <div className="font-bold text-amber-300 flex items-center justify-between">
             <span className="flex items-center gap-1.5">
@@ -164,7 +177,7 @@ export const UserRoleManager: React.FC = () => {
             </span>
           </div>
           <p className="text-[11px] text-slate-300 leading-relaxed">
-            Exclusive authority to create championship events, toggle LIVE status, and register Tournament Admins & Mat Officials.
+            Exclusive authority to create championship events, toggle LIVE status, and register Tournament Admins, Officials & Scorers.
           </p>
         </div>
 
@@ -195,6 +208,21 @@ export const UserRoleManager: React.FC = () => {
           </div>
           <p className="text-[11px] text-slate-300 leading-relaxed">
             Assigned to dedicated Leitai platforms for live strike scoring, round timing, deductions, and winner confirmation.
+          </p>
+        </div>
+
+        <div className="p-4 bg-purple-500/10 border border-purple-500/30 rounded-xl space-y-1.5">
+          <div className="font-bold text-purple-300 flex items-center justify-between">
+            <span className="flex items-center gap-1.5">
+              <ClipboardCheck className="w-4 h-4 text-purple-400" />
+              Side Scorer / Judge
+            </span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 border border-purple-500/40 text-purple-300 font-mono">
+              REGISTERABLE
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-300 leading-relaxed">
+            Assigned to a specific Leitai arena for independent sideline scoring cards, corner strikes, and private judge consensus.
           </p>
         </div>
       </div>
@@ -250,28 +278,48 @@ export const UserRoleManager: React.FC = () => {
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
                           Super Admin
                         </span>
-                      ) : u.role === 'admin' ? (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                          Tournament Admin
-                        </span>
-                      ) : u.role === 'official' ? (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/40">
-                          Mat Official
-                        </span>
                       ) : (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700">
-                          General View
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <select
+                            value={u.role}
+                            onChange={e => {
+                              const newRole = e.target.value as UserRole;
+                              const isRingRole = newRole === 'official' || newRole === 'sideline_judge';
+                              updateUser(u.id, {
+                                role: newRole,
+                                assignedRing: isRingRole ? (u.assignedRing || event.rings[0]) : undefined,
+                                ringAssignment: isRingRole ? (u.assignedRing || event.rings[0]) : undefined,
+                              });
+                            }}
+                            className={`border rounded-lg px-2 py-1 text-xs font-semibold focus:outline-none cursor-pointer ${
+                              u.role === 'admin'
+                                ? 'bg-emerald-950/50 border-emerald-700/60 text-emerald-300'
+                                : u.role === 'sideline_judge'
+                                ? 'bg-purple-950/50 border-purple-700/60 text-purple-300'
+                                : u.role === 'official'
+                                ? 'bg-sky-950/50 border-sky-700/60 text-sky-300'
+                                : 'bg-slate-950 border-slate-800 text-slate-400'
+                            }`}
+                          >
+                            <option value="admin">Tournament Admin</option>
+                            <option value="official">Mat Official (Table)</option>
+                            <option value="sideline_judge">Side Scorer (Judge)</option>
+                            <option value="general_view">General View</option>
+                          </select>
+                        </div>
                       )}
                     </td>
 
                     <td className="py-3 px-4 whitespace-nowrap">
-                      {u.role === 'official' ? (
+                      {u.role === 'official' || (u.role as string) === 'sideline_judge' ? (
                         <select
-                          value={u.assignedRing || event.rings[0]}
-                          onChange={e => updateUser(u.id, { assignedRing: e.target.value, ringAssignment: e.target.value })}
-                          className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-300 focus:outline-none focus:border-amber-500 cursor-pointer"
+                          value={u.assignedRing || ''}
+                          onChange={e => updateUser(u.id, { assignedRing: e.target.value || undefined, ringAssignment: e.target.value || undefined })}
+                          className={`border rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-amber-500 cursor-pointer ${
+                            !u.assignedRing ? 'bg-amber-950/40 border-amber-800 text-amber-300 font-bold' : 'bg-slate-950 border-slate-800 text-slate-300'
+                          }`}
                         >
+                          <option value="">-- No Arena (Unassigned) --</option>
                           {event.rings.map(r => (
                             <option key={r} value={r}>{r}</option>
                           ))}
@@ -350,10 +398,10 @@ export const UserRoleManager: React.FC = () => {
         </div>
       </div>
 
-      {/* Super Admin Registration Modal: STRICTLY TOURNAMENT ADMIN & MAT OFFICIAL ONLY */}
+      {/* Super Admin Registration Modal: TOURNAMENT ADMIN, MAT OFFICIAL & SIDE SCORER */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-slate-900 border border-slate-700/80 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
             <div className="flex items-start justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400">
@@ -364,7 +412,7 @@ export const UserRoleManager: React.FC = () => {
                     Register Official Account
                   </h3>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    Authorized roles: Tournament Admin & Mat Official only
+                    Authorized roles: Tournament Admin, Mat Official & Side Scorer
                   </p>
                 </div>
               </div>
@@ -450,27 +498,27 @@ export const UserRoleManager: React.FC = () => {
                 />
               </div>
 
-              {/* STRICT ROLE SELECTION: ONLY Tournament Admin OR Mat Official */}
+              {/* ROLE SELECTION: Tournament Admin, Mat Official, OR Side Scorer */}
               <div>
                 <label className="block text-slate-300 mb-1 font-semibold">
                   Official Role Permission *
                 </label>
-                <div className="grid grid-cols-2 gap-2 mt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1">
                   <button
                     type="button"
                     onClick={() => setNewUserData({ ...newUserData, role: 'admin' })}
                     className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                       newUserData.role === 'admin'
-                        ? 'bg-emerald-950/60 border-emerald-400 text-white'
+                        ? 'bg-emerald-950/60 border-emerald-400 text-white ring-1 ring-emerald-400/40 shadow-sm'
                         : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
                     }`}
                   >
                     <div className="font-bold flex items-center gap-1.5 text-emerald-400">
                       <Shield className="w-3.5 h-3.5" />
-                      <span>Tournament Admin</span>
+                      <span>Admin</span>
                     </div>
-                    <div className="text-[10px] text-slate-400 mt-1">
-                      Manage players, brackets & reports
+                    <div className="text-[10px] text-slate-400 mt-1 leading-tight">
+                      Roster, brackets & fixtures
                     </div>
                   </button>
 
@@ -479,7 +527,7 @@ export const UserRoleManager: React.FC = () => {
                     onClick={() => setNewUserData({ ...newUserData, role: 'official' })}
                     className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                       newUserData.role === 'official'
-                        ? 'bg-sky-950/60 border-sky-400 text-white'
+                        ? 'bg-sky-950/60 border-sky-400 text-white ring-1 ring-sky-400/40 shadow-sm'
                         : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
                     }`}
                   >
@@ -487,17 +535,36 @@ export const UserRoleManager: React.FC = () => {
                       <Award className="w-3.5 h-3.5" />
                       <span>Mat Official</span>
                     </div>
-                    <div className="text-[10px] text-slate-400 mt-1">
-                      Live Leitai scoring & referee
+                    <div className="text-[10px] text-slate-400 mt-1 leading-tight">
+                      Table console & match referee
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setNewUserData({ ...newUserData, role: 'sideline_judge' })}
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                      newUserData.role === 'sideline_judge'
+                        ? 'bg-purple-950/60 border-purple-400 text-white ring-1 ring-purple-400/40 shadow-sm'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="font-bold flex items-center gap-1.5 text-purple-400">
+                      <ClipboardCheck className="w-3.5 h-3.5" />
+                      <span>Side Scorer</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-1 leading-tight">
+                      Independent sideline judge cards
                     </div>
                   </button>
                 </div>
               </div>
 
-              {newUserData.role === 'official' && (
+              {(newUserData.role === 'official' || newUserData.role === 'sideline_judge') && (
                 <div>
-                  <label className="block text-slate-300 mb-1 font-semibold">
-                    Assigned Leitai Platform Arena *
+                  <label className="block text-slate-300 mb-1 font-semibold flex items-center justify-between">
+                    <span>Assigned Leitai Platform Arena *</span>
+                    <span className="text-[10px] text-amber-400 font-normal">Arena-locked access</span>
                   </label>
                   <select
                     value={newUserData.assignedRing}
@@ -508,6 +575,11 @@ export const UserRoleManager: React.FC = () => {
                       <option key={r} value={r}>{r}</option>
                     ))}
                   </select>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    {newUserData.role === 'sideline_judge'
+                      ? 'The side scorer will exclusively see and record scoring cards for bouts on this arena.'
+                      : 'The official will be designated to manage this Leitai platform.'}
+                  </p>
                 </div>
               )}
 

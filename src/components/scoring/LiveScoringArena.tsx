@@ -17,11 +17,15 @@ import {
   Award,
   Clock,
   ShieldAlert,
+  ShieldCheck,
   Flame,
   UserCheck,
   ChevronRight,
   Trophy,
+  Users,
 } from 'lucide-react';
+import { SidelineJudgeScoringPanel } from './SidelineJudgeScoringPanel';
+import { AdminJudgeConsensusModal } from './AdminJudgeConsensusModal';
 
 export const LiveScoringArena: React.FC = () => {
   const {
@@ -87,6 +91,14 @@ export const LiveScoringArena: React.FC = () => {
   // Admin correction modal
   const [isReopenModalOpen, setIsReopenModalOpen] = useState<boolean>(false);
   const [reopenReasonText, setReopenReasonText] = useState<string>('');
+
+  // Sideline Judge scoring mode & admin consensus review modal
+  const [scoringMode, setScoringMode] = useState<'official_table' | 'sideline_judge'>(
+    currentUser.role === 'official' || currentUser.role === 'sideline_judge'
+      ? 'sideline_judge'
+      : 'official_table'
+  );
+  const [isConsensusModalOpen, setIsConsensusModalOpen] = useState<boolean>(false);
 
   // Timer countdown loop
   useEffect(() => {
@@ -211,35 +223,82 @@ export const LiveScoringArena: React.FC = () => {
   const canScore = role === 'super_admin' || role === 'admin' || role === 'official';
   const canReopen = role === 'super_admin' || role === 'admin';
 
-  if (!bout) {
-    return (
-      <div className="p-12 text-center bg-slate-900/60 border border-dashed border-slate-800 rounded-2xl">
-        <Swords className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-        <h2 className="text-base font-bold text-white mb-1">No Active Bout Selected for Scoring</h2>
-        <p className="text-xs text-slate-400 max-w-sm mx-auto mb-4">
-          Please select a scheduled fight from the brackets or upcoming queue to begin official scoring.
-        </p>
-        <button
-          onClick={() => setActiveTab('brackets')}
-          className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs rounded-xl"
-        >
-          Go to Fixture Brackets →
-        </button>
-      </div>
-    );
-  }
-
   // Calculate cumulative round wins
   let redRoundsWon = 0;
   let blueRoundsWon = 0;
-  bout.rounds.forEach(r => {
-    if (r.redPoints > r.bluePoints || r.blueExits >= 2) redRoundsWon++;
-    else if (r.bluePoints > r.redPoints || r.redExits >= 2) blueRoundsWon++;
-  });
+  if (bout) {
+    bout.rounds.forEach(r => {
+      if (r.redPoints > r.bluePoints || r.blueExits >= 2) redRoundsWon++;
+      else if (r.bluePoints > r.redPoints || r.redExits >= 2) blueRoundsWon++;
+    });
+  }
 
   return (
     <div className="space-y-6 pb-16">
-      {/* Top Header: Bout Selector & Leitai Status */}
+      {/* Top Leitai Scoring Mode Switcher */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-2.5 bg-slate-900 border border-slate-800 rounded-2xl shadow-md">
+        <div className="flex items-center gap-1.5 p-1 bg-slate-950 rounded-xl border border-slate-800/80 text-xs">
+          <button
+            onClick={() => setScoringMode('official_table')}
+            className={`px-4 py-2 rounded-lg font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              scoringMode === 'official_table'
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Swords className="w-4 h-4" />
+            <span>Official Mat Console</span>
+          </button>
+
+          <button
+            onClick={() => setScoringMode('sideline_judge')}
+            className={`px-4 py-2 rounded-lg font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              scoringMode === 'sideline_judge'
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span>Sideline Judge Scoring Panel</span>
+            {(currentUser.assignedRing || currentUser.ringAssignment) && (
+              <span className="hidden md:inline px-2 py-0.5 text-[10px] rounded bg-slate-900 text-amber-300 font-semibold border border-slate-800">
+                {currentUser.assignedRing || currentUser.ringAssignment}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Admin Consensus Review Button */}
+        {canReopen && bout && (
+          <button
+            onClick={() => setIsConsensusModalOpen(true)}
+            className="px-3.5 py-2 bg-slate-950 hover:bg-slate-800 text-amber-300 hover:text-amber-200 border border-slate-800 hover:border-amber-500/50 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer shadow-sm"
+          >
+            <Users className="w-4 h-4 text-amber-400" />
+            <span>Judges Scorecards & Consensus Review</span>
+          </button>
+        )}
+      </div>
+
+      {scoringMode === 'sideline_judge' ? (
+        <SidelineJudgeScoringPanel onSwitchToOfficialScoring={() => setScoringMode('official_table')} />
+      ) : !bout ? (
+        <div className="p-12 text-center bg-slate-900/60 border border-dashed border-slate-800 rounded-2xl">
+          <Swords className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+          <h2 className="text-base font-bold text-white mb-1">No Active Bout Selected for Scoring</h2>
+          <p className="text-xs text-slate-400 max-w-sm mx-auto mb-4">
+            Please select a scheduled fight from the brackets or upcoming queue to begin official scoring.
+          </p>
+          <button
+            onClick={() => setActiveTab('brackets')}
+            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs rounded-xl"
+          >
+            Go to Fixture Brackets →
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* Top Header: Bout Selector & Leitai Status */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-lg">
         <div>
           <div className="flex items-center gap-2 text-xs">
@@ -778,6 +837,17 @@ export const LiveScoringArena: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+        </>
+      )}
+
+      {/* Admin Judge Consensus Review Modal */}
+      {isConsensusModalOpen && bout && (
+        <AdminJudgeConsensusModal
+          bout={bout}
+          categoryName={categoryName}
+          onClose={() => setIsConsensusModalOpen(false)}
+        />
       )}
     </div>
   );

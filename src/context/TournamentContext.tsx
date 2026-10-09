@@ -12,6 +12,8 @@ import {
   WeightCategory,
   BoutStatus,
   ScoreEvent,
+  SidelineJudgeScore,
+  SidelineScoreEvent,
 } from '../types/tournament';
 import {
   INITIAL_EVENT,
@@ -33,6 +35,7 @@ import {
   applySwapPlayersInBracket,
   validateBracketNoDuplicates,
 } from '../utils/tournamentHelpers';
+import { isArenaMatch } from '../utils/arenaMatcher';
 import { exportMasterFullBackup } from '../utils/excelMasterHelper';
 import {
   getSupabaseConfig,
@@ -47,6 +50,9 @@ import {
   mapRowToUser,
   mapRowToAgeCategory,
   mapRowToWeightCategory,
+  mapRowToSidelineJudgeScore,
+  supabaseUpsertSidelineJudgeScore,
+  supabaseDeleteSidelineJudgeScore,
   supabaseUpsertPlayer,
   supabaseDeletePlayer,
   supabaseBulkUpsertPlayers,
@@ -166,6 +172,30 @@ interface TournamentContextType {
     winningReason: string
   ) => { success: boolean; error?: string };
   reopenBoutResult: (boutId: string, reason: string) => { success: boolean; error?: string };
+  
+  // Judge-Only Sideline Scoring for Official Leitai Scoring
+  sidelineJudgeScores: SidelineJudgeScore[];
+  recordSidelineScoreAction: (
+    boutId: string,
+    roundNumber: number,
+    corner: 'red' | 'blue',
+    actionType: SidelineScoreEvent['actionType'],
+    points: number,
+    desc: string
+  ) => { success: boolean; error?: string };
+  recordSidelineExit: (boutId: string, roundNumber: number, corner: 'red' | 'blue') => { success: boolean; error?: string };
+  recordSidelineWarning: (boutId: string, roundNumber: number, corner: 'red' | 'blue') => { success: boolean; error?: string };
+  undoLastSidelineAction: (boutId: string, roundNumber: number) => { success: boolean; error?: string };
+  submitSidelineRoundCard: (
+    boutId: string,
+    roundNumber: number,
+    preferredWinner?: 'red' | 'blue' | 'draw'
+  ) => { success: boolean; error?: string };
+  amendSidelineRoundCard: (boutId: string, roundNumber: number) => { success: boolean; error?: string };
+  resetSidelineRoundCard: (boutId: string, roundNumber: number) => { success: boolean; error?: string };
+  getJudgeScoresForBout: (boutId: string, judgeId?: string) => SidelineJudgeScore[];
+  getAllJudgeScoresForAdmin: (boutId: string) => SidelineJudgeScore[];
+  validateJudgeAccessForBout: (bout: Bout) => { allowed: boolean; reason?: string };
   
   auditLogs: AuditLog[];
   addAuditLog: (action: AuditLog['action'], target: string, details: string) => void;
@@ -326,6 +356,18 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return saved ? JSON.parse(saved) : INITIAL_WEIGHT_CATEGORIES;
   });
 
+  const [sidelineJudgeScores, setSidelineJudgeScores] = useState<SidelineJudgeScore[]>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY}_sideline_judge_scores`);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  });
+
   // Persist to localStorage
   useEffect(() => {
     localStorage.setItem(`${STORAGE_KEY}_event`, JSON.stringify(event));
@@ -362,6 +404,10 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   useEffect(() => {
     localStorage.setItem(`${STORAGE_KEY}_audit`, JSON.stringify(auditLogs));
   }, [auditLogs]);
+
+  useEffect(() => {
+    localStorage.setItem(`${STORAGE_KEY}_sideline_judge_scores`, JSON.stringify(sidelineJudgeScores));
+  }, [sidelineJudgeScores]);
 
   // ----------------------------------------------------
   // SUPABASE BACKEND INTEGRATION & REALTIME SYNC
@@ -405,6 +451,9 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               if (pullRes.data.users && pullRes.data.users.length > 0) {
                 setUsers(pullRes.data.users);
               }
+              if (pullRes.data.sidelineJudgeScores !== undefined) {
+                setSidelineJudgeScores(pullRes.data.sidelineJudgeScores);
+              }
             }
           }).catch(console.error);
         } else {
@@ -438,6 +487,8 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           setAgeCategoriesState(prev => prev.filter(a => a.id !== targetId));
         } else if (table === 'weight_categories') {
           setWeightCategoriesState(prev => prev.filter(w => w.id !== targetId));
+        } else if (table === 'sideline_judge_scores') {
+          setSidelineJudgeScores(prev => prev.filter(s => s.id !== targetId));
         }
         return;
       }
@@ -500,6 +551,13 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           if (idx >= 0) return prev.map(item => (item.id === w.id ? w : item));
           return [...prev, w];
         });
+      } else if (table === 'sideline_judge_scores') {
+        const s = mapRowToSidelineJudgeScore(newRecord);
+        setSidelineJudgeScores(prev => {
+          const idx = prev.findIndex(item => item.id === s.id);
+          if (idx >= 0) return prev.map(item => (item.id === s.id ? s : item));
+          return [...prev, s];
+        });
       }
     });
 
@@ -543,6 +601,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       auditLogs,
       ageCategories,
       weightCategories,
+      sidelineJudgeScores,
     });
     if (res.success) {
       setSupabaseStatus('connected');
@@ -555,9 +614,9 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const res = await pullAllDataFromSupabase();
     if (res.success && res.data) {
       if (res.data.events && res.data.events.length > 0) {
-        setEvents(res.data.events);
         const currentId = event.id;
         const matched = res.data.events.find(e => e.id === currentId) || res.data.events[0];
+        setEvents(res.data.events);
         setEvent(matched);
       }
       if (res.data.players) setPlayers(res.data.players);
@@ -567,6 +626,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       if (res.data.auditLogs) setAuditLogs(res.data.auditLogs);
       if (res.data.ageCategories) setAgeCategoriesState(res.data.ageCategories);
       if (res.data.weightCategories) setWeightCategoriesState(res.data.weightCategories);
+      if (res.data.sidelineJudgeScores) setSidelineJudgeScores(res.data.sidelineJudgeScores);
       setSupabaseStatus('connected');
       return { success: true, message: res.message };
     }
@@ -608,7 +668,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       setActiveTab('master-panel');
     } else if (matchedUser.role === 'admin') {
       setActiveTab('dashboard');
-    } else if (matchedUser.role === 'official') {
+    } else if (matchedUser.role === 'official' || matchedUser.role === 'sideline_judge') {
       setActiveTab('live-scoring');
     } else {
       setActiveTab('public');
@@ -1737,6 +1797,460 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return { success: true };
   };
 
+  // ----------------------------------------------------
+  // JUDGE-ONLY SIDELINE SCORING FOR OFFICIAL LEITAI SCORING
+  // ----------------------------------------------------
+  const validateJudgeAccessForBout = (bout: Bout): { allowed: boolean; reason?: string } => {
+    if (!isLoggedIn) {
+      return {
+        allowed: false,
+        reason: 'Authentication required. Spectators and unauthenticated users cannot access sideline judge scoring.',
+      };
+    }
+    // Super admins and admins have tournament-wide jurisdiction
+    if (role === 'super_admin' || role === 'admin') {
+      return { allowed: true };
+    }
+
+    // Officials and Sideline Judges: strict arena verification
+    const judgeRing = currentUser.assignedRing || currentUser.ringAssignment;
+    if (!judgeRing || !judgeRing.trim()) {
+      return {
+        allowed: false,
+        reason: 'No arena has been assigned to your account. Scoring actions are blocked until an arena is designated.',
+      };
+    }
+
+    if (!isArenaMatch(judgeRing, bout.ring)) {
+      return {
+        allowed: false,
+        reason: `Access Denied: Bout ${bout.boutNumber} is assigned to ${bout.ring}. Your official credentials are only authorized for ${judgeRing}. Cross-arena scoring is strictly prohibited.`,
+      };
+    }
+
+    return { allowed: true };
+  };
+
+  const recordSidelineScoreAction = (
+    boutId: string,
+    roundNumber: number,
+    corner: 'red' | 'blue',
+    actionType: SidelineScoreEvent['actionType'],
+    points: number,
+    desc: string
+  ): { success: boolean; error?: string } => {
+    let targetBout: Bout | null = null;
+    for (const b of brackets) {
+      const found = findBoutInRounds(b.rounds, boutId);
+      if (found) {
+        targetBout = found;
+        break;
+      }
+    }
+    if (!targetBout) {
+      return { success: false, error: 'Bout not found in active tournament brackets.' };
+    }
+
+    const access = validateJudgeAccessForBout(targetBout);
+    if (!access.allowed) {
+      return { success: false, error: access.reason };
+    }
+
+    const scoreId = `sjs-${boutId}-${currentUser.id}-r${roundNumber}`;
+    const existing = sidelineJudgeScores.find(s => s.id === scoreId);
+
+    if (existing && existing.isSubmitted) {
+      return {
+        success: false,
+        error: 'This round scorecard has already been submitted and locked. Click "Amend Scorecard" to make corrections.',
+      };
+    }
+
+    const eventId = targetBout.eventId || event.id;
+    const arena = currentUser.assignedRing || currentUser.ringAssignment || targetBout.ring;
+
+    const newScoreEvent: SidelineScoreEvent = {
+      id: `sse-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+      roundNumber,
+      corner,
+      actionType,
+      points,
+      timestamp: Date.now(),
+      description: desc,
+    };
+
+    const currentRedPoints = existing ? existing.redPoints : 0;
+    const currentBluePoints = existing ? existing.bluePoints : 0;
+
+    const updatedScore: SidelineJudgeScore = {
+      id: scoreId,
+      boutId,
+      eventId,
+      arena,
+      judgeId: currentUser.id,
+      judgeName: currentUser.name,
+      roundNumber,
+      redPoints: corner === 'red' ? Math.max(0, currentRedPoints + points) : currentRedPoints,
+      bluePoints: corner === 'blue' ? Math.max(0, currentBluePoints + points) : currentBluePoints,
+      redExits: existing ? existing.redExits : 0,
+      blueExits: existing ? existing.blueExits : 0,
+      redWarnings: existing ? existing.redWarnings : 0,
+      blueWarnings: existing ? existing.blueWarnings : 0,
+      scoreEvents: existing ? [...existing.scoreEvents, newScoreEvent] : [newScoreEvent],
+      isSubmitted: false,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setSidelineJudgeScores(prev => {
+      const idx = prev.findIndex(s => s.id === scoreId);
+      if (idx >= 0) return prev.map(s => (s.id === scoreId ? updatedScore : s));
+      return [...prev, updatedScore];
+    });
+
+    supabaseUpsertSidelineJudgeScore(updatedScore);
+    return { success: true };
+  };
+
+  const recordSidelineExit = (
+    boutId: string,
+    roundNumber: number,
+    corner: 'red' | 'blue'
+  ): { success: boolean; error?: string } => {
+    let targetBout: Bout | null = null;
+    for (const b of brackets) {
+      const found = findBoutInRounds(b.rounds, boutId);
+      if (found) {
+        targetBout = found;
+        break;
+      }
+    }
+    if (!targetBout) return { success: false, error: 'Bout not found.' };
+
+    const access = validateJudgeAccessForBout(targetBout);
+    if (!access.allowed) return { success: false, error: access.reason };
+
+    const scoreId = `sjs-${boutId}-${currentUser.id}-r${roundNumber}`;
+    const existing = sidelineJudgeScores.find(s => s.id === scoreId);
+    if (existing && existing.isSubmitted) {
+      return { success: false, error: 'Scorecard is submitted and locked. Amend first to modify.' };
+    }
+
+    const eventId = targetBout.eventId || event.id;
+    const arena = currentUser.assignedRing || currentUser.ringAssignment || targetBout.ring;
+
+    const exitEvent: SidelineScoreEvent = {
+      id: `sse-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+      roundNumber,
+      corner,
+      actionType: 'leitai_exit',
+      points: 0,
+      timestamp: Date.now(),
+      description: `${corner === 'red' ? 'Red' : 'Blue'} fighter Leitai exit recorded by Judge (+2 pts to opponent)`,
+    };
+
+    const currentRedPoints = existing ? existing.redPoints : 0;
+    const currentBluePoints = existing ? existing.bluePoints : 0;
+    const currentRedExits = existing ? existing.redExits : 0;
+    const currentBlueExits = existing ? existing.blueExits : 0;
+
+    const updatedScore: SidelineJudgeScore = {
+      id: scoreId,
+      boutId,
+      eventId,
+      arena,
+      judgeId: currentUser.id,
+      judgeName: currentUser.name,
+      roundNumber,
+      redPoints: corner === 'blue' ? currentRedPoints + 2 : currentRedPoints,
+      bluePoints: corner === 'red' ? currentBluePoints + 2 : currentBluePoints,
+      redExits: corner === 'red' ? currentRedExits + 1 : currentRedExits,
+      blueExits: corner === 'blue' ? currentBlueExits + 1 : currentBlueExits,
+      redWarnings: existing ? existing.redWarnings : 0,
+      blueWarnings: existing ? existing.blueWarnings : 0,
+      scoreEvents: existing ? [...existing.scoreEvents, exitEvent] : [exitEvent],
+      isSubmitted: false,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setSidelineJudgeScores(prev => {
+      const idx = prev.findIndex(s => s.id === scoreId);
+      if (idx >= 0) return prev.map(s => (s.id === scoreId ? updatedScore : s));
+      return [...prev, updatedScore];
+    });
+
+    supabaseUpsertSidelineJudgeScore(updatedScore);
+    return { success: true };
+  };
+
+  const recordSidelineWarning = (
+    boutId: string,
+    roundNumber: number,
+    corner: 'red' | 'blue'
+  ): { success: boolean; error?: string } => {
+    let targetBout: Bout | null = null;
+    for (const b of brackets) {
+      const found = findBoutInRounds(b.rounds, boutId);
+      if (found) {
+        targetBout = found;
+        break;
+      }
+    }
+    if (!targetBout) return { success: false, error: 'Bout not found.' };
+
+    const access = validateJudgeAccessForBout(targetBout);
+    if (!access.allowed) return { success: false, error: access.reason };
+
+    const scoreId = `sjs-${boutId}-${currentUser.id}-r${roundNumber}`;
+    const existing = sidelineJudgeScores.find(s => s.id === scoreId);
+    if (existing && existing.isSubmitted) {
+      return { success: false, error: 'Scorecard is submitted and locked. Amend first to modify.' };
+    }
+
+    const eventId = targetBout.eventId || event.id;
+    const arena = currentUser.assignedRing || currentUser.ringAssignment || targetBout.ring;
+
+    const warnEvent: SidelineScoreEvent = {
+      id: `sse-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+      roundNumber,
+      corner,
+      actionType: 'warning',
+      points: 0,
+      timestamp: Date.now(),
+      description: `${corner === 'red' ? 'Red' : 'Blue'} warning recorded by Judge`,
+    };
+
+    const currentRedWarnings = existing ? existing.redWarnings : 0;
+    const currentBlueWarnings = existing ? existing.blueWarnings : 0;
+
+    const updatedScore: SidelineJudgeScore = {
+      id: scoreId,
+      boutId,
+      eventId,
+      arena,
+      judgeId: currentUser.id,
+      judgeName: currentUser.name,
+      roundNumber,
+      redPoints: existing ? existing.redPoints : 0,
+      bluePoints: existing ? existing.bluePoints : 0,
+      redExits: existing ? existing.redExits : 0,
+      blueExits: existing ? existing.blueExits : 0,
+      redWarnings: corner === 'red' ? currentRedWarnings + 1 : currentRedWarnings,
+      blueWarnings: corner === 'blue' ? currentBlueWarnings + 1 : currentBlueWarnings,
+      scoreEvents: existing ? [...existing.scoreEvents, warnEvent] : [warnEvent],
+      isSubmitted: false,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setSidelineJudgeScores(prev => {
+      const idx = prev.findIndex(s => s.id === scoreId);
+      if (idx >= 0) return prev.map(s => (s.id === scoreId ? updatedScore : s));
+      return [...prev, updatedScore];
+    });
+
+    supabaseUpsertSidelineJudgeScore(updatedScore);
+    return { success: true };
+  };
+
+  const undoLastSidelineAction = (
+    boutId: string,
+    roundNumber: number
+  ): { success: boolean; error?: string } => {
+    const scoreId = `sjs-${boutId}-${currentUser.id}-r${roundNumber}`;
+    const existing = sidelineJudgeScores.find(s => s.id === scoreId);
+    if (!existing || existing.scoreEvents.length === 0) {
+      return { success: false, error: 'No score events to undo in this round.' };
+    }
+    if (existing.isSubmitted) {
+      return { success: false, error: 'Scorecard is already submitted and locked.' };
+    }
+
+    const lastEvent = existing.scoreEvents[existing.scoreEvents.length - 1];
+    const remainingEvents = existing.scoreEvents.slice(0, -1);
+
+    let redPoints = existing.redPoints;
+    let bluePoints = existing.bluePoints;
+    let redExits = existing.redExits;
+    let blueExits = existing.blueExits;
+    let redWarnings = existing.redWarnings;
+    let blueWarnings = existing.blueWarnings;
+
+    if (lastEvent.actionType === 'leitai_exit') {
+      if (lastEvent.corner === 'red') {
+        redExits = Math.max(0, redExits - 1);
+        bluePoints = Math.max(0, bluePoints - 2);
+      } else {
+        blueExits = Math.max(0, blueExits - 1);
+        redPoints = Math.max(0, redPoints - 2);
+      }
+    } else if (lastEvent.actionType === 'warning') {
+      if (lastEvent.corner === 'red') redWarnings = Math.max(0, redWarnings - 1);
+      else blueWarnings = Math.max(0, blueWarnings - 1);
+    } else {
+      if (lastEvent.corner === 'red') redPoints = Math.max(0, redPoints - lastEvent.points);
+      else bluePoints = Math.max(0, bluePoints - lastEvent.points);
+    }
+
+    const updatedScore: SidelineJudgeScore = {
+      ...existing,
+      redPoints,
+      bluePoints,
+      redExits,
+      blueExits,
+      redWarnings,
+      blueWarnings,
+      scoreEvents: remainingEvents,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setSidelineJudgeScores(prev => prev.map(s => (s.id === scoreId ? updatedScore : s)));
+    supabaseUpsertSidelineJudgeScore(updatedScore);
+    return { success: true };
+  };
+
+  const submitSidelineRoundCard = (
+    boutId: string,
+    roundNumber: number,
+    preferredWinner?: 'red' | 'blue' | 'draw'
+  ): { success: boolean; error?: string } => {
+    let targetBout: Bout | null = null;
+    for (const b of brackets) {
+      const found = findBoutInRounds(b.rounds, boutId);
+      if (found) {
+        targetBout = found;
+        break;
+      }
+    }
+    if (!targetBout) return { success: false, error: 'Bout not found.' };
+
+    const access = validateJudgeAccessForBout(targetBout);
+    if (!access.allowed) return { success: false, error: access.reason };
+
+    const scoreId = `sjs-${boutId}-${currentUser.id}-r${roundNumber}`;
+    const existing = sidelineJudgeScores.find(s => s.id === scoreId);
+
+    const redPoints = existing ? existing.redPoints : 0;
+    const bluePoints = existing ? existing.bluePoints : 0;
+    const redExits = existing ? existing.redExits : 0;
+    const blueExits = existing ? existing.blueExits : 0;
+
+    let computedWinner: 'red' | 'blue' | 'draw' = 'draw';
+    if (preferredWinner) {
+      computedWinner = preferredWinner;
+    } else if (blueExits >= 2) {
+      computedWinner = 'red';
+    } else if (redExits >= 2) {
+      computedWinner = 'blue';
+    } else if (redPoints > bluePoints) {
+      computedWinner = 'red';
+    } else if (bluePoints > redPoints) {
+      computedWinner = 'blue';
+    }
+
+    const updatedScore: SidelineJudgeScore = {
+      id: scoreId,
+      boutId,
+      eventId: targetBout.eventId || event.id,
+      arena: currentUser.assignedRing || currentUser.ringAssignment || targetBout.ring,
+      judgeId: currentUser.id,
+      judgeName: currentUser.name,
+      roundNumber,
+      redPoints,
+      bluePoints,
+      redExits,
+      blueExits,
+      redWarnings: existing ? existing.redWarnings : 0,
+      blueWarnings: existing ? existing.blueWarnings : 0,
+      winner: computedWinner,
+      scoreEvents: existing ? existing.scoreEvents : [],
+      isSubmitted: true,
+      submittedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    setSidelineJudgeScores(prev => {
+      const idx = prev.findIndex(s => s.id === scoreId);
+      if (idx >= 0) return prev.map(s => (s.id === scoreId ? updatedScore : s));
+      return [...prev, updatedScore];
+    });
+
+    supabaseUpsertSidelineJudgeScore(updatedScore);
+
+    addAuditLog(
+      'SIDELINE_SCORE_SUBMIT',
+      `Bout ${targetBout.boutNumber} · Round ${roundNumber}`,
+      `Judge ${currentUser.name} submitted official sideline scorecard for ${targetBout.ring} (Red: ${redPoints}, Blue: ${bluePoints}, Decision: ${computedWinner.toUpperCase()}).`
+    );
+
+    return { success: true };
+  };
+
+  const amendSidelineRoundCard = (
+    boutId: string,
+    roundNumber: number
+  ): { success: boolean; error?: string } => {
+    const scoreId = `sjs-${boutId}-${currentUser.id}-r${roundNumber}`;
+    const existing = sidelineJudgeScores.find(s => s.id === scoreId);
+    if (!existing) return { success: false, error: 'No scorecard found to amend.' };
+
+    const updatedScore: SidelineJudgeScore = {
+      ...existing,
+      isSubmitted: false,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setSidelineJudgeScores(prev => prev.map(s => (s.id === scoreId ? updatedScore : s)));
+    supabaseUpsertSidelineJudgeScore(updatedScore);
+
+    addAuditLog(
+      'SIDELINE_SCORE_AMEND',
+      `Bout ${boutId} · Round ${roundNumber}`,
+      `Judge ${currentUser.name} reopened sideline scorecard for corrections.`
+    );
+
+    return { success: true };
+  };
+
+  const resetSidelineRoundCard = (
+    boutId: string,
+    roundNumber: number
+  ): { success: boolean; error?: string } => {
+    const scoreId = `sjs-${boutId}-${currentUser.id}-r${roundNumber}`;
+    setSidelineJudgeScores(prev => prev.filter(s => s.id !== scoreId));
+    supabaseDeleteSidelineJudgeScore(scoreId);
+
+    addAuditLog(
+      'SIDELINE_SCORE_RESET',
+      `Bout ${boutId} · Round ${roundNumber}`,
+      `Judge ${currentUser.name} cleared round ${roundNumber} scorecard.`
+    );
+
+    return { success: true };
+  };
+
+  const getJudgeScoresForBout = (boutId: string, judgeId?: string): SidelineJudgeScore[] => {
+    if (!isLoggedIn) return [];
+
+    // If official or sideline judge: strictly only their own scores
+    if (role === 'official' || role === 'sideline_judge') {
+      return sidelineJudgeScores.filter(
+        s => s.boutId === boutId && s.judgeId === currentUser.id
+      );
+    }
+
+    // If admin or super_admin: can filter by specific judge or return all
+    if (judgeId) {
+      return sidelineJudgeScores.filter(s => s.boutId === boutId && s.judgeId === judgeId);
+    }
+    return sidelineJudgeScores.filter(s => s.boutId === boutId);
+  };
+
+  const getAllJudgeScoresForAdmin = (boutId: string): SidelineJudgeScore[] => {
+    if (role !== 'super_admin' && role !== 'admin') {
+      return [];
+    }
+    return sidelineJudgeScores.filter(s => s.boutId === boutId);
+  };
+
   // User management - Strictly restricted to Super Admin
   const updateUserRole = (userId: string, newRole: UserRole) => {
     if (role !== 'super_admin') return;
@@ -1758,11 +2272,11 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       return { success: false, error: 'Unauthorized: Only Super Admin has permission to register tournament officials.' };
     }
 
-    // STRICT: Only Tournament Admin and Mat Official can be registered
-    if (userData.role !== 'admin' && userData.role !== 'official') {
+    // STRICT: Only Tournament Admin, Mat Official, and Sideline Scorer can be registered
+    if (userData.role !== 'admin' && userData.role !== 'official' && userData.role !== 'sideline_judge') {
       return {
         success: false,
-        error: 'Registration restricted: Super Admin can only register Tournament Admin and Mat Official roles.',
+        error: 'Registration restricted: Super Admin can only register Tournament Admin, Mat Official, or Sideline Scorer roles.',
       };
     }
 
@@ -1802,7 +2316,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     addAuditLog(
       'CREATE',
       `Official: ${newUser.name}`,
-      `Super Admin created ${newUser.role === 'admin' ? 'Tournament Admin' : 'Mat Official'} credentials for ${newUser.email}.`
+      `Super Admin created ${newUser.role === 'admin' ? 'Tournament Admin' : newUser.role === 'sideline_judge' ? 'Sideline Scorer' : 'Mat Official'} credentials for ${newUser.email}.`
     );
 
     return { success: true, user: newUser };
@@ -2181,6 +2695,17 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         recordBoutWarning,
         submitBoutResult,
         reopenBoutResult,
+        sidelineJudgeScores,
+        recordSidelineScoreAction,
+        recordSidelineExit,
+        recordSidelineWarning,
+        undoLastSidelineAction,
+        submitSidelineRoundCard,
+        amendSidelineRoundCard,
+        resetSidelineRoundCard,
+        getJudgeScoresForBout,
+        getAllJudgeScoresForAdmin,
+        validateJudgeAccessForBout,
         auditLogs,
         addAuditLog,
         activeTab,
