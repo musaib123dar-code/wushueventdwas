@@ -40,6 +40,9 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu }) => {
     activeTab,
     resetToDefaults,
     toggleEventLive,
+    supabaseStatus,
+    setSupabaseModalOpen,
+    isLoadingData,
   } = useTournament();
 
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -101,24 +104,42 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu }) => {
             </div>
           </button>
 
-          {/* Quick Championship Switcher (if multiple events exist) */}
-          {events.length > 1 && (
-            <div className="hidden xl:flex items-center gap-1.5 pl-2 border-l border-slate-800">
-              <span className="text-[11px] text-slate-400 font-medium">Championship:</span>
-              <select
-                value={event.id}
-                onChange={e => switchEvent(e.target.value)}
-                className="bg-slate-900 border border-slate-700 hover:border-amber-500/50 text-slate-200 text-xs rounded-lg px-2.5 py-1 max-w-[200px] truncate focus:outline-none focus:ring-1 focus:ring-amber-500 font-semibold cursor-pointer transition-colors"
-                title="Switch Active Championship Tournament Workspace"
-              >
-                {events.map(ev => (
-                  <option key={ev.id} value={ev.id}>
-                    {ev.name} {ev.isLive ? '● Live' : '○ Draft'}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+          {/* Quick Championship Switcher */}
+          <div className="hidden xl:flex items-center gap-1.5 pl-2 border-l border-slate-800">
+            <span className="text-[11px] text-slate-400 font-medium">Championship:</span>
+            <select
+              value={event.id}
+              onChange={e => switchEvent(e.target.value)}
+              className="bg-slate-900 border border-slate-700 hover:border-amber-500/50 text-slate-200 text-xs rounded-lg px-2.5 py-1 max-w-[200px] truncate focus:outline-none focus:ring-1 focus:ring-amber-500 font-semibold cursor-pointer transition-colors"
+              title="Switch Active Championship Tournament Workspace"
+            >
+              {events.map(ev => (
+                <option key={ev.id} value={ev.id}>
+                  {ev.name} {ev.isLive ? '● Live' : '○ Draft'}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Supabase Cloud Live Status Pill */}
+          <button
+            onClick={() => setSupabaseModalOpen(true)}
+            title={`Supabase Realtime Cloud Sync: ${supabaseStatus === 'connected' ? 'Connected & Synchronized' : supabaseStatus}`}
+            className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono-tabular font-semibold border transition-all cursor-pointer bg-slate-900/90 border-slate-800 hover:border-amber-500/40"
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                supabaseStatus === 'connected'
+                  ? 'bg-emerald-400 animate-pulse'
+                  : supabaseStatus === 'connecting'
+                  ? 'bg-amber-400 animate-ping'
+                  : 'bg-rose-400'
+              }`}
+            />
+            <span className="text-slate-300">
+              {isLoadingData ? 'Syncing...' : supabaseStatus === 'connected' ? 'Cloud Live' : 'Offline'}
+            </span>
+          </button>
         </div>
 
         {/* Zone 2: Clean text navigation links */}

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useTournament } from '../../context/TournamentContext';
 import { Bracket, Bout, Category, Player, AuditLog } from '../../types/tournament';
 import { FixtureEditModal } from './FixtureEditModal';
@@ -63,11 +63,25 @@ export const BracketViewer: React.FC = () => {
     setActiveTab,
     role,
     currentUser,
+    restoreFromSafetySnapshot,
+    getSafetySnapshotInfo,
+    isLoadingData,
   } = useTournament();
+
+  const snapshotInfo = getSafetySnapshotInfo();
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>(
     categories[0]?.id || ''
   );
+
+  // Auto-sync selected category with active event's categories
+  useEffect(() => {
+    if (categories.length > 0 && !categories.some(c => c.id === selectedCategoryId)) {
+      setSelectedCategoryId(categories[0].id);
+    } else if (categories.length === 0) {
+      setSelectedCategoryId('');
+    }
+  }, [categories, selectedCategoryId]);
   const [reopenBoutModal, setReopenBoutModal] = useState<Bout | null>(null);
   const [reopenReason, setReopenReason] = useState('');
   const [regenModalOpen, setRegenModalOpen] = useState(false);
@@ -1598,21 +1612,49 @@ export const BracketViewer: React.FC = () => {
         )}
       </>
       )
+    ) : isLoadingData ? (
+      <div className="p-16 text-center bg-slate-900/60 border border-slate-800 rounded-2xl">
+        <div className="w-8 h-8 rounded-full border-2 border-amber-400 border-t-transparent animate-spin mx-auto mb-3"></div>
+        <h3 className="text-sm font-bold text-white mb-1">
+          Loading Tournament Fixtures from Supabase...
+        </h3>
+        <p className="text-xs text-slate-500 max-w-md mx-auto">
+          Synchronizing live bout status and brackets for {event.name}
+        </p>
+      </div>
     ) : (
-        <div className="p-12 text-center bg-slate-900/60 border border-dashed border-slate-800 rounded-2xl">
-          <GitFork className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-          <h3 className="text-sm font-bold text-white mb-1">
-            No Knockout Fixture Tree Generated Yet
-          </h3>
+      <div className="p-12 text-center bg-slate-900/60 border border-dashed border-slate-800 rounded-2xl">
+        <GitFork className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+        <h3 className="text-sm font-bold text-white mb-1">
+          No Knockout Fixture Tree Generated Yet for {event.name}
+        </h3>
           <p className="text-xs text-slate-400 max-w-md mx-auto mb-4">
             Select a category above, verify its eligible roster in Category Filtering, and generate the single-elimination tournament tree with automatic BYE allocation.
           </p>
-          <button
-            onClick={() => setActiveTab('categories')}
-            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs rounded-xl transition-colors inline-flex items-center gap-2 cursor-pointer"
-          >
-            Go to Category Filtering →
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-2.5">
+            {snapshotInfo.available && (snapshotInfo.bracketsCount ?? 0) > 0 && (
+              <button
+                onClick={() => {
+                  const res = restoreFromSafetySnapshot();
+                  if (res.success) {
+                    showSuccessFeedback(res.message);
+                  } else {
+                    setErrorMessage(res.message);
+                  }
+                }}
+                className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs rounded-xl transition-all inline-flex items-center gap-2 cursor-pointer shadow-md shadow-amber-500/20"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Restore Knockout Brackets from Backup ({snapshotInfo.bracketsCount ?? 0})</span>
+              </button>
+            )}
+            <button
+              onClick={() => setActiveTab('categories')}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs rounded-xl transition-colors inline-flex items-center gap-2 cursor-pointer"
+            >
+              Go to Category Filtering →
+            </button>
+          </div>
         </div>
       )}
 

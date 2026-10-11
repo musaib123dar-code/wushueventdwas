@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useTournament } from '../../context/TournamentContext';
 import { Player } from '../../types/tournament';
 import { calculateAge, formatDate } from '../../utils/tournamentHelpers';
@@ -18,6 +18,9 @@ import {
   FileSpreadsheet,
   ShieldAlert,
   Trophy,
+  RotateCcw,
+  Upload,
+  ShieldCheck,
 } from 'lucide-react';
 
 export const PlayerRegistry: React.FC = () => {
@@ -33,6 +36,11 @@ export const PlayerRegistry: React.FC = () => {
     ageCategories,
     weightCategories,
     exportDataAsCSV,
+    restoreFromSafetySnapshot,
+    getSafetySnapshotInfo,
+    exportTournamentBackupJson,
+    importTournamentBackupJson,
+    isLoadingData,
   } = useTournament();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -43,6 +51,9 @@ export const PlayerRegistry: React.FC = () => {
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const jsonFileInputRef = useRef<HTMLInputElement | null>(null);
+  const snapshotInfo = getSafetySnapshotInfo();
 
   // Form fields
   const [formData, setFormData] = useState({
@@ -193,6 +204,61 @@ export const PlayerRegistry: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          <input
+            type="file"
+            ref={jsonFileInputRef}
+            accept=".json"
+            className="hidden"
+            onChange={e => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const reader = new FileReader();
+              reader.onload = ev => {
+                const text = ev.target?.result as string;
+                if (text) {
+                  const res = importTournamentBackupJson(text);
+                  setFeedback({ type: res.success ? 'success' : 'error', message: res.message });
+                }
+              };
+              reader.readAsText(file);
+              e.target.value = '';
+            }}
+          />
+
+          <button
+            onClick={exportTournamentBackupJson}
+            className="px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-lg border border-slate-800 transition-colors flex items-center gap-1.5"
+            title="Download full tournament safety backup as JSON file"
+          >
+            <Download className="w-3.5 h-3.5 text-amber-400" />
+            <span>Backup JSON</span>
+          </button>
+
+          {canEdit && (
+            <button
+              onClick={() => jsonFileInputRef.current?.click()}
+              className="px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-lg border border-slate-800 transition-colors flex items-center gap-1.5"
+              title="Restore tournament from a downloaded JSON backup file"
+            >
+              <Upload className="w-3.5 h-3.5 text-sky-400" />
+              <span>Restore Backup</span>
+            </button>
+          )}
+
+          {canEdit && snapshotInfo.available && (
+            <button
+              onClick={() => {
+                const res = restoreFromSafetySnapshot();
+                setFeedback({ type: res.success ? 'success' : 'error', message: res.message });
+              }}
+              className="px-3 py-2 text-xs font-semibold text-amber-300 hover:text-white bg-amber-950/40 hover:bg-amber-900/50 rounded-lg border border-amber-600/50 transition-colors flex items-center gap-1.5 shadow-sm"
+              title={`Restore state from automatic snapshot (${snapshotInfo.playersCount} athletes)`}
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+              <span>Restore Snapshot ({snapshotInfo.playersCount})</span>
+            </button>
+          )}
+
           <button
             onClick={() => exportDataAsCSV('players')}
             className="px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-lg border border-slate-800 transition-colors flex items-center gap-1.5"
@@ -224,6 +290,97 @@ export const PlayerRegistry: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Instant Snapshot Recovery Banner if 0 players but snapshot exists */}
+      {players.length === 0 && snapshotInfo.available && (
+        <div className="rounded-xl border border-amber-500/60 bg-gradient-to-r from-amber-950/80 via-slate-900 to-amber-950/40 p-4 shadow-lg animate-fadeIn flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0 text-amber-400">
+              <RotateCcw className="w-4 h-4" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                <span>Saved Athlete Roster Found in Local Safety Cache</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-amber-500/20 text-amber-300 rounded font-mono">
+                  {snapshotInfo.playersCount} Athletes
+                </span>
+              </h4>
+              <p className="text-[11px] text-slate-300 mt-0.5">
+                A previous roster of {snapshotInfo.playersCount} athletes and {snapshotInfo.bracketsCount} brackets was preserved. You can restore it immediately.
+              </p>
+            </div>
+          </div>
+          {canEdit && (
+            <button
+              onClick={() => {
+                const res = restoreFromSafetySnapshot();
+                setFeedback({ type: res.success ? 'success' : 'error', message: res.message });
+              }}
+              className="px-3.5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs rounded-lg transition-all flex items-center gap-1.5 shrink-0 cursor-pointer shadow-md shadow-amber-500/20"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Restore {snapshotInfo.playersCount} Athletes</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {feedback && (
+        <div
+          className={`p-3.5 rounded-xl border text-xs flex items-center justify-between gap-3 animate-fadeIn ${
+            feedback.type === 'success'
+              ? 'bg-emerald-950/60 border-emerald-600 text-emerald-200'
+              : 'bg-rose-950/60 border-rose-600 text-rose-200'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {feedback.type === 'success' ? (
+              <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            )}
+            <span>{feedback.message}</span>
+          </div>
+          <button
+            onClick={() => setFeedback(null)}
+            className="text-slate-400 hover:text-white text-xs font-bold px-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Safety Backup Alert Banner when players are 0 but snapshot exists */}
+      {players.length === 0 && snapshotInfo.available && (
+        <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-fadeIn">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+              <RotateCcw className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <div className="font-bold text-amber-300 text-sm flex items-center gap-2">
+                Safety Backup Snapshot Detected!
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 font-mono font-bold">
+                  {snapshotInfo.playersCount} Athletes Saved
+                </span>
+              </div>
+              <p className="text-slate-300 text-[11px] mt-0.5">
+                A saved tournament snapshot from {snapshotInfo.timestamp ? new Date(snapshotInfo.timestamp).toLocaleTimeString() : 'previous session'} is ready to restore. Bring back all athlete records and brackets immediately.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              const res = restoreFromSafetySnapshot();
+              setFeedback({ type: res.success ? 'success' : 'error', message: res.message });
+            }}
+            className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-xl text-xs cursor-pointer shadow-lg shadow-amber-500/20 transition-all shrink-0 flex items-center gap-2"
+          >
+            <RotateCcw className="w-4 h-4" />
+            <span>Restore Saved Roster ({snapshotInfo.playersCount} Athletes)</span>
+          </button>
+        </div>
+      )}
 
       {/* Championship Event Scope Indicator */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
@@ -395,6 +552,20 @@ export const PlayerRegistry: React.FC = () => {
                     </tr>
                   );
                 })
+              ) : isLoadingData ? (
+                <tr>
+                  <td colSpan={11} className="py-16 text-center text-slate-400">
+                    <div className="flex flex-col items-center justify-center max-w-sm mx-auto">
+                      <div className="w-8 h-8 rounded-full border-2 border-amber-400 border-t-transparent animate-spin mb-3"></div>
+                      <p className="text-xs font-semibold text-slate-200">
+                        Retrieving athletes from Supabase Cloud...
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        Authoritative online sync for {event.name}
+                      </p>
+                    </div>
+                  </td>
+                </tr>
               ) : (
                 <tr>
                   <td colSpan={11} className="py-12 text-center text-slate-500">
@@ -402,11 +573,23 @@ export const PlayerRegistry: React.FC = () => {
                       <FileSpreadsheet className="w-8 h-8 text-slate-600 mb-2" />
                       <p className="text-xs text-slate-400 font-medium">
                         {players.length === 0
-                          ? 'No players registered yet.'
+                          ? `No players registered yet for ${event.name}.`
                           : 'No matching players found for the current search/filter criteria.'}
                       </p>
                       {players.length === 0 && canEdit && (
-                        <div className="flex items-center gap-2.5 mt-4">
+                        <div className="flex flex-wrap items-center justify-center gap-2.5 mt-4">
+                          {snapshotInfo.available && (
+                            <button
+                              onClick={() => {
+                                const res = restoreFromSafetySnapshot();
+                                setFeedback({ type: res.success ? 'success' : 'error', message: res.message });
+                              }}
+                              className="px-3.5 py-2 text-xs font-bold text-slate-950 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 rounded-lg transition-all flex items-center gap-1.5 shadow-md shadow-amber-500/20 cursor-pointer"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>Restore Previous Roster ({snapshotInfo.playersCount})</span>
+                            </button>
+                          )}
                           <button
                             onClick={() => setIsBulkModalOpen(true)}
                             className="px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors flex items-center gap-1.5 shadow-md shadow-emerald-600/20"

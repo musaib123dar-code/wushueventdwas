@@ -1,0 +1,6 @@
+{
+  "summary":  "Architecture and implementation plan to transition the Wushu Tournament EMS to a pure cloud-authoritative architecture powered by Supabase PostgreSQL, eliminating persistent local browser caching while strictly isolating athletes, categories, brackets, and scorecards per tournament event ID.",
+  "updatedAt":  "2026-10-11T09:24:13.685211527Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

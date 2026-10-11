@@ -19,6 +19,7 @@ import {
   Layers,
   X,
   Check,
+  RotateCcw,
 } from 'lucide-react';
 import { Category } from '../../types/tournament';
 
@@ -37,7 +38,12 @@ export const CategoryManager: React.FC = () => {
     brackets,
     role,
     setActiveTab,
+    restoreFromSafetySnapshot,
+    getSafetySnapshotInfo,
+    isLoadingData,
   } = useTournament();
+
+  const snapshotInfo = getSafetySnapshotInfo();
 
   const [selectedGender, setSelectedGender] = useState<'male' | 'female'>('male');
   const [selectedAgeCatId, setSelectedAgeCatId] = useState<string>(ageCategories[0]?.id || '');
@@ -446,21 +452,41 @@ export const CategoryManager: React.FC = () => {
             </div>
           </div>
 
-          {categories.length === 0 ? (
+          {isLoadingData ? (
+            <div className="p-8 rounded-2xl bg-slate-900/60 border border-slate-800 text-center space-y-3">
+              <div className="w-8 h-8 rounded-full border-2 border-amber-400 border-t-transparent animate-spin mx-auto"></div>
+              <div className="text-sm font-semibold text-slate-200">Loading divisions from Supabase Cloud...</div>
+              <p className="text-xs text-slate-500">Retrieving active categories for {event.name}</p>
+            </div>
+          ) : categories.length === 0 ? (
             <div className="p-8 rounded-2xl bg-slate-900/60 border border-dashed border-slate-800 text-center space-y-3">
               <Layers className="w-10 h-10 text-slate-600 mx-auto" />
-              <div className="text-sm font-semibold text-slate-300">No Categories Created Yet</div>
+              <div className="text-sm font-semibold text-slate-300">No Categories Created Yet for {event.name}</div>
               <p className="text-xs text-slate-400 max-w-sm mx-auto">
                 Use the Category Filter Builder on the left or click "Auto-Generate All Official Divisions" above to populate official Sanda categories.
               </p>
               {canEdit && (
-                <button
-                  onClick={handleAutoGenerateAllStandardCategories}
-                  className="px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold inline-flex items-center gap-2 cursor-pointer transition-all"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Auto-Generate Official Divisions</span>
-                </button>
+                <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
+                  {snapshotInfo.available && (snapshotInfo.categoriesCount ?? 0) > 0 && (
+                    <button
+                      onClick={() => {
+                        const res = restoreFromSafetySnapshot();
+                        setFeedbackMsg({ type: res.success ? 'success' : 'error', text: res.message });
+                      }}
+                      className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-xl text-xs inline-flex items-center gap-2 cursor-pointer transition-all shadow-md shadow-amber-500/20"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Restore Divisions from Backup ({snapshotInfo.categoriesCount ?? 0})</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={handleAutoGenerateAllStandardCategories}
+                    className="px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold inline-flex items-center gap-2 cursor-pointer transition-all"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Auto-Generate Official Divisions</span>
+                  </button>
+                </div>
               )}
             </div>
           ) : (

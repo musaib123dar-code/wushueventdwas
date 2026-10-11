@@ -35,6 +35,7 @@ import {
   ExternalLink,
   Trophy,
   Zap,
+  Upload,
 } from 'lucide-react';
 
 export const MasterAdminPanel: React.FC = () => {
@@ -69,9 +70,15 @@ export const MasterAdminPanel: React.FC = () => {
     setSupabaseModalOpen,
     resetToDefaults,
     clearAllCacheAndReset,
+    restoreFromSafetySnapshot,
+    getSafetySnapshotInfo,
+    exportTournamentBackupJson,
+    importTournamentBackupJson,
   } = useTournament();
 
   const [activeSubTab, setActiveSubTab] = useState<'event' | 'weights' | 'ages' | 'excel' | 'lifecycle'>('event');
+  const snapshotInfo = getSafetySnapshotInfo();
+  const jsonFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Event form state
   const [eventForm, setEventForm] = useState<EventSetup>({ ...event });
@@ -237,7 +244,7 @@ export const MasterAdminPanel: React.FC = () => {
     }
     createOfficialEvent(eventForm, true);
     setConfirmClearAction(null);
-    showFeedback('success', `New official event "${eventForm.name}" initialized! Athlete database and brackets reset for fresh registration.`);
+    showFeedback('success', `New official event "${eventForm.name}" created! Active workspace isolated for fresh registrations (other events preserved).`);
   };
 
   // Add / remove rings
@@ -1489,6 +1496,82 @@ export const MasterAdminPanel: React.FC = () => {
                   <Zap className="w-3.5 h-3.5" />
                   <span>Configure Supabase Cloud</span>
                 </button>
+              </div>
+
+              {/* Option F: Tournament Safety Backup & Instant Recovery */}
+              <div className="p-5 rounded-xl border border-sky-500/40 bg-slate-950 space-y-3 flex flex-col justify-between md:col-span-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 text-sky-400 font-bold text-xs uppercase tracking-wider">
+                      <ShieldCheck className="w-4 h-4" />
+                      Automatic Safety Backup & JSON Disaster Recovery
+                    </div>
+                    <h4 className="text-sm font-bold text-white">
+                      Data Protection, Snapshots & Disaster Recovery
+                    </h4>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Local rolling snapshots are automatically captured whenever athletes or fixtures are updated.
+                      {snapshotInfo.available ? (
+                        <span className="text-emerald-400 font-semibold ml-1">
+                          Snapshot active: {snapshotInfo.playersCount} athletes, {snapshotInfo.bracketsCount} brackets saved ({snapshotInfo.timestamp ? new Date(snapshotInfo.timestamp).toLocaleTimeString() : ''}).
+                        </span>
+                      ) : (
+                        <span className="text-slate-500 ml-1">No snapshot taken yet.</span>
+                      )}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <input
+                      type="file"
+                      ref={jsonFileInputRef}
+                      accept=".json"
+                      className="hidden"
+                      onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = ev => {
+                          const text = ev.target?.result as string;
+                          if (text) {
+                            const res = importTournamentBackupJson(text);
+                            showFeedback(res.success ? 'success' : 'error', res.message);
+                          }
+                        };
+                        reader.readAsText(file);
+                        e.target.value = '';
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={exportTournamentBackupJson}
+                      className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-amber-300 border border-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Download JSON Backup</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => jsonFileInputRef.current?.click()}
+                      className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-sky-300 border border-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Import JSON Backup</span>
+                    </button>
+                    {snapshotInfo.available && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const res = restoreFromSafetySnapshot();
+                          showFeedback(res.success ? 'success' : 'error', res.message);
+                        }}
+                        className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-lg text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Restore Safety Snapshot ({snapshotInfo.playersCount} Athletes)</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           </div>

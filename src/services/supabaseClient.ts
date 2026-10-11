@@ -234,9 +234,10 @@ export function mapRowToEvent(r: any): EventSetup {
   };
 }
 
-export function mapPlayerToRow(p: Player) {
+export function mapPlayerToRow(p: Player, eventId?: string) {
   return {
     id: p.id,
+    event_id: p.eventId || eventId || null,
     registration_number: p.registrationNumber || p.id,
     name: p.name,
     father_name: p.fatherName || null,
@@ -256,6 +257,7 @@ export function mapPlayerToRow(p: Player) {
 export function mapRowToPlayer(r: any): Player {
   return {
     id: r.id,
+    eventId: r.event_id || '',
     registrationNumber: r.registration_number || r.id,
     name: r.name || 'Athlete',
     fatherName: r.father_name || '',
@@ -272,10 +274,10 @@ export function mapRowToPlayer(r: any): Player {
   };
 }
 
-export function mapCategoryToRow(c: Category) {
+export function mapCategoryToRow(c: Category, eventId?: string) {
   return {
     id: c.id,
-    event_id: c.eventId || null,
+    event_id: c.eventId || eventId || null,
     name: c.name,
     gender: c.gender,
     age_category_id: c.ageCategoryId,
@@ -306,11 +308,11 @@ export function mapRowToCategory(r: any): Category {
   };
 }
 
-export function mapBracketToRow(b: Bracket) {
+export function mapBracketToRow(b: Bracket, eventId?: string) {
   return {
     id: b.id,
     category_id: b.categoryId,
-    event_id: b.eventId || null,
+    event_id: b.eventId || eventId || null,
     rounds: Array.isArray(b.rounds) ? b.rounds : [],
     generated_at: b.generatedAt || new Date().toISOString(),
     is_locked: Boolean(b.isLocked),
@@ -529,11 +531,11 @@ export async function supabaseDeleteSidelineJudgeScore(
 }
 
 // --- PLAYERS ---
-export async function supabaseUpsertPlayer(player: Player): Promise<{ success: boolean; error?: string }> {
+export async function supabaseUpsertPlayer(player: Player, eventId?: string): Promise<{ success: boolean; error?: string }> {
   const client = getSupabaseClient();
   if (!client) return { success: false, error: 'Supabase client not initialized' };
   try {
-    const row = mapPlayerToRow(player);
+    const row = mapPlayerToRow(player, eventId);
     const { error } = await client.from('players').upsert([row]);
     if (error) {
       console.error('Failed to upsert player in Supabase:', error.message);
@@ -562,11 +564,11 @@ export async function supabaseDeletePlayer(playerId: string): Promise<{ success:
   }
 }
 
-export async function supabaseBulkUpsertPlayers(players: Player[]): Promise<{ success: boolean; error?: string }> {
+export async function supabaseBulkUpsertPlayers(players: Player[], eventId?: string): Promise<{ success: boolean; error?: string }> {
   const client = getSupabaseClient();
   if (!client || players.length === 0) return { success: true };
   try {
-    const rows = players.map(mapPlayerToRow);
+    const rows = players.map(p => mapPlayerToRow(p, eventId));
     const { error } = await client.from('players').upsert(rows);
     if (error) {
       console.error('Failed to bulk upsert players in Supabase:', error.message);
@@ -579,22 +581,26 @@ export async function supabaseBulkUpsertPlayers(players: Player[]): Promise<{ su
   }
 }
 
-export async function supabaseClearPlayers(): Promise<void> {
+export async function supabaseClearPlayers(eventId?: string): Promise<void> {
   const client = getSupabaseClient();
   if (!client) return;
   try {
-    await client.from('players').delete().neq('id', '___non_existent___');
+    if (eventId) {
+      await client.from('players').delete().eq('event_id', eventId);
+    } else {
+      console.warn('supabaseClearPlayers called without eventId - no-op to prevent cross-tournament wipe');
+    }
   } catch (err) {
     console.error('Failed to clear players in Supabase:', err);
   }
 }
 
 // --- CATEGORIES ---
-export async function supabaseUpsertCategory(category: Category): Promise<{ success: boolean; error?: string }> {
+export async function supabaseUpsertCategory(category: Category, eventId?: string): Promise<{ success: boolean; error?: string }> {
   const client = getSupabaseClient();
   if (!client) return { success: false, error: 'Supabase client not initialized' };
   try {
-    const row = mapCategoryToRow(category);
+    const row = mapCategoryToRow(category, eventId);
     const { error } = await client.from('categories').upsert([row]);
     if (error) {
       console.error('Failed to upsert category in Supabase:', error.message);
@@ -603,6 +609,23 @@ export async function supabaseUpsertCategory(category: Category): Promise<{ succ
     return { success: true };
   } catch (err: any) {
     console.error('Failed to upsert category in Supabase:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function supabaseBulkUpsertCategories(categories: Category[], eventId?: string): Promise<{ success: boolean; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client || categories.length === 0) return { success: true };
+  try {
+    const rows = categories.map(c => mapCategoryToRow(c, eventId));
+    const { error } = await client.from('categories').upsert(rows);
+    if (error) {
+      console.error('Failed to bulk upsert categories in Supabase:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to bulk upsert categories in Supabase:', err);
     return { success: false, error: err.message };
   }
 }
@@ -617,22 +640,26 @@ export async function supabaseDeleteCategory(categoryId: string): Promise<void> 
   }
 }
 
-export async function supabaseClearCategories(): Promise<void> {
+export async function supabaseClearCategories(eventId?: string): Promise<void> {
   const client = getSupabaseClient();
   if (!client) return;
   try {
-    await client.from('categories').delete().neq('id', '___non_existent___');
+    if (eventId) {
+      await client.from('categories').delete().eq('event_id', eventId);
+    } else {
+      console.warn('supabaseClearCategories called without eventId - no-op to prevent cross-tournament wipe');
+    }
   } catch (err) {
     console.error('Failed to clear categories in Supabase:', err);
   }
 }
 
 // --- BRACKETS ---
-export async function supabaseUpsertBracket(bracket: Bracket): Promise<{ success: boolean; error?: string }> {
+export async function supabaseUpsertBracket(bracket: Bracket, eventId?: string): Promise<{ success: boolean; error?: string }> {
   const client = getSupabaseClient();
   if (!client) return { success: false, error: 'Supabase client not initialized' };
   try {
-    const row = mapBracketToRow(bracket);
+    const row = mapBracketToRow(bracket, eventId);
     const { error } = await client.from('brackets').upsert([row]);
     if (error) {
       console.error('Failed to upsert bracket in Supabase:', error.message);
@@ -641,6 +668,23 @@ export async function supabaseUpsertBracket(bracket: Bracket): Promise<{ success
     return { success: true };
   } catch (err: any) {
     console.error('Failed to upsert bracket in Supabase:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function supabaseBulkUpsertBrackets(brackets: Bracket[], eventId?: string): Promise<{ success: boolean; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client || brackets.length === 0) return { success: true };
+  try {
+    const rows = brackets.map(b => mapBracketToRow(b, eventId));
+    const { error } = await client.from('brackets').upsert(rows);
+    if (error) {
+      console.error('Failed to bulk upsert brackets in Supabase:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.error('Failed to bulk upsert brackets in Supabase:', err);
     return { success: false, error: err.message };
   }
 }
@@ -655,11 +699,15 @@ export async function supabaseDeleteBracket(bracketId: string): Promise<void> {
   }
 }
 
-export async function supabaseClearBrackets(): Promise<void> {
+export async function supabaseClearBrackets(eventId?: string): Promise<void> {
   const client = getSupabaseClient();
   if (!client) return;
   try {
-    await client.from('brackets').delete().neq('id', '___non_existent___');
+    if (eventId) {
+      await client.from('brackets').delete().eq('event_id', eventId);
+    } else {
+      console.warn('supabaseClearBrackets called without eventId - no-op to prevent cross-tournament wipe');
+    }
   } catch (err) {
     console.error('Failed to clear brackets in Supabase:', err);
   }
@@ -861,7 +909,7 @@ export async function pushAllDataToSupabase(payload: {
 
     // 4. Players
     if (payload.players && payload.players.length > 0) {
-      const playerRows = payload.players.map(mapPlayerToRow);
+      const playerRows = payload.players.map(p => mapPlayerToRow(p));
       const { error: pErr } = await client.from('players').upsert(playerRows);
       if (pErr) {
         const isRls = pErr.message.includes('row-level security') || pErr.message.includes('RLS');
@@ -877,7 +925,7 @@ export async function pushAllDataToSupabase(payload: {
 
     // 5. Categories
     if (payload.categories && payload.categories.length > 0) {
-      const catRows = payload.categories.map(mapCategoryToRow);
+      const catRows = payload.categories.map(c => mapCategoryToRow(c));
       const { error: catErr } = await client.from('categories').upsert(catRows);
       if (catErr) {
         const isRls = catErr.message.includes('row-level security') || catErr.message.includes('RLS');
@@ -891,7 +939,7 @@ export async function pushAllDataToSupabase(payload: {
 
     // 6. Brackets
     if (payload.brackets && payload.brackets.length > 0) {
-      const bracketRows = payload.brackets.map(mapBracketToRow);
+      const bracketRows = payload.brackets.map(b => mapBracketToRow(b));
       const { error: bErr } = await client.from('brackets').upsert(bracketRows);
       if (bErr) {
         const isRls = bErr.message.includes('row-level security') || bErr.message.includes('RLS');
@@ -949,9 +997,9 @@ export async function pushAllDataToSupabase(payload: {
 }
 
 /**
- * Fetch all tournament records from Supabase
+ * Fetch tournament records from Supabase scoped to active eventId
  */
-export async function pullAllDataFromSupabase(): Promise<{
+export async function pullAllDataFromSupabase(targetEventId?: string): Promise<{
   success: boolean;
   message: string;
   data?: {
@@ -972,6 +1020,25 @@ export async function pullAllDataFromSupabase(): Promise<{
   }
 
   try {
+    let playerQuery = client.from('players').select('*');
+    let categoryQuery = client.from('categories').select('*');
+    let bracketQuery = client.from('brackets').select('*');
+    let sidelineQuery = client.from('sideline_judge_scores').select('*');
+
+    if (targetEventId) {
+      if (targetEventId === 'event-official-01') {
+        playerQuery = playerQuery.or(`event_id.eq.${targetEventId},event_id.is.null`);
+        categoryQuery = categoryQuery.or(`event_id.eq.${targetEventId},event_id.is.null`);
+        bracketQuery = bracketQuery.or(`event_id.eq.${targetEventId},event_id.is.null`);
+        sidelineQuery = sidelineQuery.or(`event_id.eq.${targetEventId},event_id.is.null`);
+      } else {
+        playerQuery = playerQuery.eq('event_id', targetEventId);
+        categoryQuery = categoryQuery.eq('event_id', targetEventId);
+        bracketQuery = bracketQuery.eq('event_id', targetEventId);
+        sidelineQuery = sidelineQuery.eq('event_id', targetEventId);
+      }
+    }
+
     const [
       eventsRes,
       playersRes,
@@ -984,14 +1051,14 @@ export async function pullAllDataFromSupabase(): Promise<{
       sidelineRes,
     ] = await Promise.all([
       client.from('events').select('*'),
-      client.from('players').select('*'),
-      client.from('categories').select('*'),
-      client.from('brackets').select('*'),
+      playerQuery,
+      categoryQuery,
+      bracketQuery,
       client.from('tournament_users').select('*'),
       client.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(200),
       client.from('age_categories').select('*'),
       client.from('weight_categories').select('*'),
-      client.from('sideline_judge_scores').select('*'),
+      sidelineQuery,
     ]);
 
     const resData: any = {};
@@ -1047,21 +1114,36 @@ export async function pullAllDataFromSupabase(): Promise<{
 }
 
 /**
- * Setup Realtime channel subscription for instant scoring and tournament sync across all clients
+ * Setup Realtime channel subscription for instant scoring and tournament sync scoped to eventId
  */
 export function subscribeToSupabaseTournament(
-  onTableChange: (table: string, eventType: string, newRecord: any, oldRecord?: any) => void
+  onTableChange: (table: string, eventType: string, newRecord: any, oldRecord?: any) => void,
+  targetEventId?: string
 ): (() => void) | null {
   const client = getSupabaseClient();
   if (!client) return null;
 
   try {
+    const channelName = `wushu-tournament-realtime-${targetEventId || 'all'}-${Date.now()}`;
+    const isMatchingEvent = (rec: any) => {
+      if (!targetEventId) return true;
+      if (!rec) return true;
+      const evId = rec.event_id;
+      if (evId === targetEventId) return true;
+      if (!evId && targetEventId === 'event-official-01') return true;
+      return false;
+    };
+
     const channel: RealtimeChannel = client
-      .channel('wushu-tournament-realtime-sync')
+      .channel(channelName)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'brackets' },
-        payload => onTableChange('brackets', payload.eventType, payload.new, payload.old)
+        payload => {
+          const rec = payload.new || payload.old;
+          if (!isMatchingEvent(rec)) return;
+          onTableChange('brackets', payload.eventType, payload.new, payload.old);
+        }
       )
       .on(
         'postgres_changes',
@@ -1071,12 +1153,20 @@ export function subscribeToSupabaseTournament(
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'players' },
-        payload => onTableChange('players', payload.eventType, payload.new, payload.old)
+        payload => {
+          const rec = payload.new || payload.old;
+          if (!isMatchingEvent(rec)) return;
+          onTableChange('players', payload.eventType, payload.new, payload.old);
+        }
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'categories' },
-        payload => onTableChange('categories', payload.eventType, payload.new, payload.old)
+        payload => {
+          const rec = payload.new || payload.old;
+          if (!isMatchingEvent(rec)) return;
+          onTableChange('categories', payload.eventType, payload.new, payload.old);
+        }
       )
       .on(
         'postgres_changes',
@@ -1096,7 +1186,11 @@ export function subscribeToSupabaseTournament(
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'sideline_judge_scores' },
-        payload => onTableChange('sideline_judge_scores', payload.eventType, payload.new, payload.old)
+        payload => {
+          const rec = payload.new || payload.old;
+          if (!isMatchingEvent(rec)) return;
+          onTableChange('sideline_judge_scores', payload.eventType, payload.new, payload.old);
+        }
       )
       .subscribe((status, err) => {
         if (status === 'SUBSCRIBED') {

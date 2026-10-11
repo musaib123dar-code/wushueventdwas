@@ -54,6 +54,7 @@ export interface EventSetup {
 
 export interface Player {
   id: string;
+  eventId?: string;
   registrationNumber: string;
   name: string;
   fatherName: string;
@@ -241,12 +242,32 @@ export interface AuditLog {
     | 'SIDELINE_SCORE_SUBMIT'
     | 'SIDELINE_SCORE_AMEND'
     | 'SIDELINE_SCORE_RESET'
+    | 'SAFETY_BACKUP_RESTORE'
     | 'SYSTEM_RESET';
   target: string;
   details: string;
   entityType?: string;
   entityId?: string;
   reason?: string;
+}
+
+export interface TournamentSafetySnapshot {
+  timestamp: string;
+  eventName: string;
+  playersCount: number;
+  categoriesCount: number;
+  bracketsCount: number;
+  data: {
+    event: EventSetup;
+    events: EventSetup[];
+    players: Player[];
+    categories: Category[];
+    brackets: Bracket[];
+    users: User[];
+    ageCategories: AgeCategory[];
+    weightCategories: WeightCategory[];
+    sidelineJudgeScores?: SidelineJudgeScore[];
+  };
 }
 
 export interface MedalTallyItem {

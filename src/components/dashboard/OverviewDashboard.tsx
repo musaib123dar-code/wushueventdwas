@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import { useTournament } from '../../context/TournamentContext';
 import {
   Users,
@@ -17,6 +17,11 @@ import {
   AlertTriangle,
   Play,
   CheckCircle2,
+  RotateCcw,
+  ShieldCheck,
+  ShieldAlert,
+  Download,
+  Upload,
 } from 'lucide-react';
 import { calculateAge, findBoutInRounds } from '../../utils/tournamentHelpers';
 
@@ -32,7 +37,15 @@ export const OverviewDashboard: React.FC = () => {
     setActiveTab,
     setActiveBoutForScoring,
     auditLogs,
+    restoreFromSafetySnapshot,
+    getSafetySnapshotInfo,
+    exportTournamentBackupJson,
+    importTournamentBackupJson,
   } = useTournament();
+
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const snapshotInfo = getSafetySnapshotInfo();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Compute tournament statistics
   let totalBouts = 0;
@@ -134,6 +147,127 @@ export const OverviewDashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Action Feedback Message */}
+      {feedback && (
+        <div
+          className={`p-4 rounded-xl text-xs font-medium flex items-center justify-between gap-3 animate-fadeIn border ${
+            feedback.type === 'success'
+              ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
+              : 'bg-rose-950/60 border-rose-500/40 text-rose-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>{feedback.message}</span>
+          </div>
+          <button
+            onClick={() => setFeedback(null)}
+            className="text-slate-400 hover:text-white text-xs underline cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Hidden file input for JSON restore */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept=".json"
+        className="hidden"
+        onChange={e => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = ev => {
+            const text = ev.target?.result as string;
+            if (text) {
+              const res = importTournamentBackupJson(text);
+              setFeedback({ type: res.success ? 'success' : 'error', message: res.message });
+            }
+          };
+          reader.readAsText(file);
+          e.target.value = '';
+        }}
+      />
+
+      {/* DISASTER RECOVERY BANNER: If 0 athletes are loaded but a safety backup snapshot is detected */}
+      {players.length === 0 && snapshotInfo.available && (
+        <div className="rounded-2xl border border-amber-500/60 bg-gradient-to-r from-amber-950/90 via-slate-900 to-amber-950/50 p-5 shadow-2xl animate-fadeIn">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0 text-amber-400 shadow-md">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-white">
+                    Previous Tournament Data Detected in Local Storage Backup
+                  </h3>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono">
+                    Auto-Snapshot Safe
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                  Your browser backup contains <strong className="text-amber-400 font-semibold">{snapshotInfo.playersCount} registered athletes</strong> and <strong className="text-amber-400 font-semibold">{snapshotInfo.bracketsCount} brackets</strong> ({snapshotInfo.timestamp ? new Date(snapshotInfo.timestamp).toLocaleTimeString() : 'saved earlier'}).
+                  Click below to restore your roster and categories immediately.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+              <button
+                onClick={() => {
+                  const res = restoreFromSafetySnapshot();
+                  setFeedback({ type: res.success ? 'success' : 'error', message: res.message });
+                }}
+                className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center gap-2 cursor-pointer"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>Restore {snapshotInfo.playersCount} Athletes & Fixtures</span>
+              </button>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl border border-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Upload className="w-3.5 h-3.5 text-sky-400" />
+                <span>Import JSON</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DATA INTEGRITY & SAFETY BAR */}
+      {players.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80 text-xs">
+          <div className="flex flex-wrap items-center gap-2 text-slate-400">
+            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="text-slate-300 font-medium">Tournament Roster Active:</span>
+            <span className="text-emerald-400 font-mono-tabular font-bold">{players.length} Athletes</span>
+            <span>·</span>
+            <span className="text-slate-300">{categories.length} Divisions</span>
+            <span>·</span>
+            <span className="text-slate-300">{brackets.length} Fixture Brackets</span>
+            {snapshotInfo.available && (
+              <span className="text-[10px] text-slate-500 ml-1">
+                (Backup snapshot synced)
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={exportTournamentBackupJson}
+              className="text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+              title="Download entire tournament state as a standalone JSON backup"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download JSON Backup</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Metric Counters Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">

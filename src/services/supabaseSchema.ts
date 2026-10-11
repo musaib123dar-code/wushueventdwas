@@ -112,6 +112,7 @@ CREATE TABLE IF NOT EXISTS public.weight_categories (
 -- 5. Players / Athletes Registry Table
 CREATE TABLE IF NOT EXISTS public.players (
   id TEXT PRIMARY KEY,
+  event_id TEXT,
   registration_number TEXT,
   name TEXT NOT NULL,
   father_name TEXT,
@@ -204,6 +205,17 @@ CREATE TABLE IF NOT EXISTS public.sideline_judge_scores (
   submitted_at TEXT,
   updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
+
+-- Event ID Migration & Indexes for Strict Multi-Tournament Partitioning
+ALTER TABLE public.players ADD COLUMN IF NOT EXISTS event_id TEXT;
+ALTER TABLE public.categories ADD COLUMN IF NOT EXISTS event_id TEXT;
+ALTER TABLE public.brackets ADD COLUMN IF NOT EXISTS event_id TEXT;
+ALTER TABLE public.sideline_judge_scores ADD COLUMN IF NOT EXISTS event_id TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_players_event_id ON public.players(event_id);
+CREATE INDEX IF NOT EXISTS idx_categories_event_id ON public.categories(event_id);
+CREATE INDEX IF NOT EXISTS idx_brackets_event_id ON public.brackets(event_id);
+CREATE INDEX IF NOT EXISTS idx_sideline_event_id ON public.sideline_judge_scores(event_id);
 
 -- 11. Grant Full Permissions to Public, Anon, Authenticated, and Service Role
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role, postgres;

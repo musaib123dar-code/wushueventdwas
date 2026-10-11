@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
   UserRole,
   User,
@@ -14,6 +14,7 @@ import {
   ScoreEvent,
   SidelineJudgeScore,
   SidelineScoreEvent,
+  TournamentSafetySnapshot,
 } from '../types/tournament';
 import {
   INITIAL_EVENT,
@@ -39,6 +40,7 @@ import { isArenaMatch } from '../utils/arenaMatcher';
 import { exportMasterFullBackup } from '../utils/excelMasterHelper';
 import {
   getSupabaseConfig,
+  getSupabaseClient,
   testSupabaseConnection,
   pushAllDataToSupabase,
   pullAllDataFromSupabase,
@@ -82,6 +84,7 @@ interface TournamentContextType {
   setSupabaseModalOpen: (open: boolean) => void;
   syncToSupabase: () => Promise<{ success: boolean; message: string }>;
   fetchFromSupabase: () => Promise<{ success: boolean; message: string }>;
+  isLoadingData: boolean;
   role: UserRole;
   setRole: (role: UserRole) => void;
   currentUser: User;
@@ -205,6 +208,18 @@ interface TournamentContextType {
   
   resetToDefaults: () => void;
   clearAllCacheAndReset: () => void;
+  saveSafetySnapshot: (label?: string) => void;
+  restoreFromSafetySnapshot: () => { success: boolean; message: string };
+  getSafetySnapshotInfo: () => {
+    available: boolean;
+    timestamp?: string;
+    playersCount?: number;
+    categoriesCount?: number;
+    bracketsCount?: number;
+    eventName?: string;
+  };
+  exportTournamentBackupJson: () => void;
+  importTournamentBackupJson: (jsonString: string) => { success: boolean; message: string };
   exportDataAsCSV: (type: 'players' | 'bouts' | 'results' | 'audit') => void;
   exportMasterExcelBackup: () => void;
   importMasterWorkbook: (data: {
@@ -219,26 +234,6 @@ interface TournamentContextType {
 }
 
 const TournamentContext = createContext<TournamentContextType | undefined>(undefined);
-
-const STORAGE_KEY = 'wushu_tournament_state_prod_v3';
-
-// Clear all legacy test caches from localStorage
-try {
-  const legacyPrefixes = [
-    'wushu_tournament_state_v1_',
-    'wushu_tournament_state_live_v2_',
-  ];
-  const keysToRemove: string[] = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const k = localStorage.key(i);
-    if (k && legacyPrefixes.some(p => k.startsWith(p))) {
-      keysToRemove.push(k);
-    }
-  }
-  keysToRemove.forEach(k => localStorage.removeItem(k));
-} catch {
-  // Ignore localStorage errors
-}
 
 const GUEST_USER: User = {
   id: 'guest',
@@ -259,213 +254,125 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [supabaseStatus, setSupabaseStatus] = useState<
     'connected' | 'disconnected' | 'connecting' | 'not_configured' | 'error'
   >('not_configured');
+  const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
 
-  const [event, setEvent] = useState<EventSetup>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_event`);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed.isLive === undefined) parsed.isLive = true;
-        return parsed;
-      } catch {
-        return INITIAL_EVENT;
-      }
-    }
-    return INITIAL_EVENT;
-  });
-
-  const [events, setEvents] = useState<EventSetup[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_events`);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map((e: EventSetup) => ({
-            ...e,
-            isLive: e.isLive !== undefined ? e.isLive : true,
-          }));
-        }
-      } catch {
-        // Fallback
-      }
-    }
-    return [{ ...INITIAL_EVENT, isLive: true }];
-  });
-
-  const [players, setPlayers] = useState<Player[]>(() => {
-    const config = getSupabaseConfig();
-    if (config.isConfigured) {
-      return [];
-    }
-    const saved = localStorage.getItem(`${STORAGE_KEY}_players`);
-    return saved ? JSON.parse(saved) : INITIAL_PLAYERS;
-  });
-
-  const [categories, setCategories] = useState<Category[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_categories`);
-    return saved ? JSON.parse(saved) : INITIAL_CATEGORIES;
-  });
-
-  const [brackets, setBrackets] = useState<Bracket[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_brackets`);
-    return saved ? JSON.parse(saved) : createInitialBrackets();
-  });
-
-  const [users, setUsers] = useState<User[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_users`);
-    if (saved) {
-      try {
-        const parsed: User[] = JSON.parse(saved);
-        // Ensure standard initial users have their credentials and new initial users exist
-        const merged = [...parsed];
-        INITIAL_USERS.forEach(initU => {
-          const idx = merged.findIndex(u => u.email === initU.email || u.username === initU.username);
-          if (idx >= 0) {
-            if (!merged[idx].password && initU.password) {
-              merged[idx].password = initU.password;
-            }
-            if (!merged[idx].username && initU.username) {
-              merged[idx].username = initU.username;
-            }
-          } else {
-            merged.push(initU);
-          }
-        });
-        return merged;
-      } catch {
-        return INITIAL_USERS;
-      }
-    }
-    return INITIAL_USERS;
-  });
-
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_audit`);
-    return saved ? JSON.parse(saved) : INITIAL_AUDIT_LOGS;
-  });
-
+  // Pure in-memory presentation state - ZERO persistent browser cache
+  const [event, setEvent] = useState<EventSetup>(INITIAL_EVENT);
+  const [events, setEvents] = useState<EventSetup[]>([INITIAL_EVENT]);
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [brackets, setBrackets] = useState<Bracket[]>([]);
+  const [users, setUsers] = useState<User[]>(INITIAL_USERS);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(INITIAL_AUDIT_LOGS);
   const [activeBoutForScoring, setActiveBoutForScoring] = useState<Bout | null>(null);
+  const [ageCategories, setAgeCategoriesState] = useState<AgeCategory[]>(INITIAL_AGE_CATEGORIES);
+  const [weightCategories, setWeightCategoriesState] = useState<WeightCategory[]>(INITIAL_WEIGHT_CATEGORIES);
+  const [sidelineJudgeScores, setSidelineJudgeScores] = useState<SidelineJudgeScore[]>([]);
 
-  const [ageCategories, setAgeCategoriesState] = useState<AgeCategory[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_age_categories`);
-    return saved ? JSON.parse(saved) : INITIAL_AGE_CATEGORIES;
-  });
+  // In-memory safety snapshot holder (non-persistent, transient during session)
+  const transientSnapshotRef = useRef<TournamentSafetySnapshot | null>(null);
 
-  const [weightCategories, setWeightCategoriesState] = useState<WeightCategory[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_weight_categories`);
-    return saved ? JSON.parse(saved) : INITIAL_WEIGHT_CATEGORIES;
-  });
-
-  const [sidelineJudgeScores, setSidelineJudgeScores] = useState<SidelineJudgeScore[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_sideline_judge_scores`);
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        return [];
+  const saveSafetySnapshot = (label?: string) => {
+    if (players.length > 0 || categories.length > 0 || brackets.length > 0) {
+      transientSnapshotRef.current = {
+        timestamp: new Date().toISOString(),
+        eventName: event.name || 'Wushu Sanda Championship',
+        playersCount: players.length,
+        categoriesCount: categories.length,
+        bracketsCount: brackets.length,
+        data: {
+          event,
+          events,
+          players,
+          categories,
+          brackets,
+          users,
+          ageCategories,
+          weightCategories,
+          sidelineJudgeScores,
+        },
+      };
+      if (label) {
+        console.log(`[Safety Snapshot] Captured in-memory snapshot '${label}'`);
       }
     }
-    return [];
-  });
-
-  // Persist to localStorage
-  useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_event`, JSON.stringify(event));
-  }, [event]);
-
-  useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_events`, JSON.stringify(events));
-  }, [events]);
-
-  useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_age_categories`, JSON.stringify(ageCategories));
-  }, [ageCategories]);
-
-  useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_weight_categories`, JSON.stringify(weightCategories));
-  }, [weightCategories]);
-
-  useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_players`, JSON.stringify(players));
-  }, [players]);
-
-  useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_categories`, JSON.stringify(categories));
-  }, [categories]);
-
-  useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_brackets`, JSON.stringify(brackets));
-  }, [brackets]);
-
-  useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_users`, JSON.stringify(users));
-  }, [users]);
-
-  useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_audit`, JSON.stringify(auditLogs));
-  }, [auditLogs]);
-
-  useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_sideline_judge_scores`, JSON.stringify(sidelineJudgeScores));
-  }, [sidelineJudgeScores]);
+  };
 
   // ----------------------------------------------------
-  // SUPABASE BACKEND INTEGRATION & REALTIME SYNC
+  // SUPABASE CLOUD INITIALIZATION & AUTHORITATIVE PULL
   // ----------------------------------------------------
   useEffect(() => {
     const config = getSupabaseConfig();
     if (!config.isConfigured) {
       setSupabaseStatus('not_configured');
+      setIsLoadingData(false);
       return;
     }
 
     setSupabaseStatus('connecting');
     testSupabaseConnection()
-      .then(res => {
+      .then(async res => {
         if (res.success) {
           setSupabaseStatus('connected');
-          // Remote Supabase PostgreSQL is the single source of truth on startup.
-          // DO NOT upload any local storage data automatically.
-          pullAllDataFromSupabase().then(pullRes => {
-            if (pullRes.success && pullRes.data) {
-              if (pullRes.data.events && pullRes.data.events.length > 0) {
-                setEvents(pullRes.data.events);
-                setEvent(pullRes.data.events[0]);
+          try {
+            const client = getSupabaseClient();
+            let targetEvent = INITIAL_EVENT;
+
+            // 1. Fetch available championship events from Supabase
+            if (client) {
+              const { data: dbEvents } = await client.from('events').select('*').order('created_at', { ascending: false });
+              if (dbEvents && dbEvents.length > 0) {
+                const mappedEvents = dbEvents.map(mapRowToEvent);
+                setEvents(mappedEvents);
+                // Default to first live event, or latest created event
+                const activeEv = mappedEvents.find((e: EventSetup) => e.isLive) || mappedEvents[0];
+                targetEvent = activeEv;
+                setEvent(activeEv);
+              } else {
+                // Initialize default event row in Supabase
+                await supabaseUpsertEvent(INITIAL_EVENT);
               }
+            }
+
+            // 2. Authoritative pull: query records filtered strictly by targetEvent.id
+            const pullRes = await pullAllDataFromSupabase(targetEvent.id);
+            if (pullRes.success && pullRes.data) {
               if (pullRes.data.ageCategories && pullRes.data.ageCategories.length > 0) {
                 setAgeCategoriesState(pullRes.data.ageCategories);
               }
               if (pullRes.data.weightCategories && pullRes.data.weightCategories.length > 0) {
                 setWeightCategoriesState(pullRes.data.weightCategories);
               }
-              // Set players strictly from Supabase - if zero, state is empty.
-              if (pullRes.data.players !== undefined) {
-                setPlayers(pullRes.data.players);
-              }
-              if (pullRes.data.categories !== undefined) {
-                setCategories(pullRes.data.categories);
-              }
-              if (pullRes.data.brackets !== undefined) {
-                setBrackets(pullRes.data.brackets);
-              }
               if (pullRes.data.users && pullRes.data.users.length > 0) {
                 setUsers(pullRes.data.users);
               }
-              if (pullRes.data.sidelineJudgeScores !== undefined) {
-                setSidelineJudgeScores(pullRes.data.sidelineJudgeScores);
-              }
+
+              // Strictly populate from cloud records for this event scope
+              setPlayers(pullRes.data.players || []);
+              setCategories(pullRes.data.categories || []);
+              setBrackets(pullRes.data.brackets || []);
+              setSidelineJudgeScores(pullRes.data.sidelineJudgeScores || []);
             }
-          }).catch(console.error);
+          } catch (err) {
+            console.error('Error during cloud tournament pull:', err);
+          } finally {
+            setIsLoadingData(false);
+          }
         } else {
           setSupabaseStatus('error');
+          setIsLoadingData(false);
         }
       })
-      .catch(() => setSupabaseStatus('error'));
+      .catch(err => {
+        console.error('Supabase connection error:', err);
+        setSupabaseStatus('error');
+        setIsLoadingData(false);
+      });
   }, []);
 
-  // Supabase Realtime channel subscription for live sync across officials & spectators
+  // Supabase Realtime channel subscription scoped strictly to active event.id
   useEffect(() => {
-    if (supabaseStatus !== 'connected') return;
+    if (supabaseStatus !== 'connected' || !event?.id) return;
 
     const unsubscribe = subscribeToSupabaseTournament((table, eventType, newRecord, oldRecord) => {
       const targetId = (oldRecord && oldRecord.id) || (newRecord && newRecord.id);
@@ -497,6 +404,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
       if (table === 'brackets') {
         const b = mapRowToBracket(newRecord);
+        if (b.eventId && b.eventId !== event.id) return;
         setBrackets(prev => {
           const idx = prev.findIndex(item => item.id === b.id);
           if (idx >= 0) return prev.map(item => (item.id === b.id ? b : item));
@@ -518,6 +426,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setEvent(prev => (prev.id === e.id ? e : prev));
       } else if (table === 'players') {
         const p = mapRowToPlayer(newRecord);
+        if (p.eventId && p.eventId !== event.id) return;
         setPlayers(prev => {
           const idx = prev.findIndex(item => item.id === p.id);
           if (idx >= 0) return prev.map(item => (item.id === p.id ? p : item));
@@ -525,6 +434,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         });
       } else if (table === 'categories') {
         const c = mapRowToCategory(newRecord);
+        if (c.eventId && c.eventId !== event.id) return;
         setCategories(prev => {
           const idx = prev.findIndex(item => item.id === c.id);
           if (idx >= 0) return prev.map(item => (item.id === c.id ? c : item));
@@ -553,42 +463,43 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         });
       } else if (table === 'sideline_judge_scores') {
         const s = mapRowToSidelineJudgeScore(newRecord);
+        if (s.eventId && s.eventId !== event.id) return;
         setSidelineJudgeScores(prev => {
           const idx = prev.findIndex(item => item.id === s.id);
           if (idx >= 0) return prev.map(item => (item.id === s.id ? s : item));
           return [...prev, s];
         });
       }
-    });
+    }, event.id);
 
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [supabaseStatus]);
+  }, [supabaseStatus, event?.id]);
 
-  // Periodic heartbeat sync (every 25 seconds) to ensure spectator data never falls stale
+  // Periodic heartbeat sync (every 25 seconds) strictly for active event
   useEffect(() => {
-    if (supabaseStatus !== 'connected') return;
+    if (supabaseStatus !== 'connected' || !event?.id) return;
     const interval = setInterval(() => {
-      pullAllDataFromSupabase().then(pullRes => {
+      pullAllDataFromSupabase(event.id).then(pullRes => {
         if (pullRes.success && pullRes.data) {
           if (pullRes.data.events && pullRes.data.events.length > 0) {
             setEvents(pullRes.data.events);
           }
-          if (pullRes.data.brackets !== undefined) {
+          if (pullRes.data.brackets && pullRes.data.brackets.length > 0) {
             setBrackets(pullRes.data.brackets);
           }
-          if (pullRes.data.players !== undefined) {
+          if (pullRes.data.players) {
             setPlayers(pullRes.data.players);
           }
-          if (pullRes.data.categories !== undefined) {
+          if (pullRes.data.categories) {
             setCategories(pullRes.data.categories);
           }
         }
       }).catch(() => {});
     }, 25000);
     return () => clearInterval(interval);
-  }, [supabaseStatus]);
+  }, [supabaseStatus, event?.id]);
 
   // Sync all current state to Supabase
   const syncToSupabase = async (): Promise<{ success: boolean; message: string }> => {
@@ -609,28 +520,33 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return res;
   };
 
-  // Pull all data from Supabase into local state
+  // Pull all data from Supabase into local state scoped to active championship
   const fetchFromSupabase = async (): Promise<{ success: boolean; message: string }> => {
-    const res = await pullAllDataFromSupabase();
-    if (res.success && res.data) {
-      if (res.data.events && res.data.events.length > 0) {
-        const currentId = event.id;
-        const matched = res.data.events.find(e => e.id === currentId) || res.data.events[0];
-        setEvents(res.data.events);
-        setEvent(matched);
+    setIsLoadingData(true);
+    try {
+      const res = await pullAllDataFromSupabase(event.id);
+      if (res.success && res.data) {
+        if (res.data.events && res.data.events.length > 0) {
+          const currentId = event.id;
+          const matched = res.data.events.find(e => e.id === currentId) || res.data.events[0];
+          setEvents(res.data.events);
+          setEvent(matched);
+        }
+        if (res.data.players) setPlayers(res.data.players);
+        if (res.data.categories) setCategories(res.data.categories);
+        if (res.data.brackets) setBrackets(res.data.brackets);
+        if (res.data.users) setUsers(res.data.users);
+        if (res.data.auditLogs) setAuditLogs(res.data.auditLogs);
+        if (res.data.ageCategories) setAgeCategoriesState(res.data.ageCategories);
+        if (res.data.weightCategories) setWeightCategoriesState(res.data.weightCategories);
+        if (res.data.sidelineJudgeScores) setSidelineJudgeScores(res.data.sidelineJudgeScores);
+        setSupabaseStatus('connected');
+        return { success: true, message: res.message };
       }
-      if (res.data.players) setPlayers(res.data.players);
-      if (res.data.categories) setCategories(res.data.categories);
-      if (res.data.brackets) setBrackets(res.data.brackets);
-      if (res.data.users) setUsers(res.data.users);
-      if (res.data.auditLogs) setAuditLogs(res.data.auditLogs);
-      if (res.data.ageCategories) setAgeCategoriesState(res.data.ageCategories);
-      if (res.data.weightCategories) setWeightCategoriesState(res.data.weightCategories);
-      if (res.data.sidelineJudgeScores) setSidelineJudgeScores(res.data.sidelineJudgeScores);
-      setSupabaseStatus('connected');
-      return { success: true, message: res.message };
+      return { success: false, message: res.message || 'Failed to pull from Supabase' };
+    } finally {
+      setIsLoadingData(false);
     }
-    return { success: false, message: res.message || 'Failed to pull from Supabase' };
   };
 
   // Authentication status
@@ -730,46 +646,34 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const createOfficialEvent = (
     eventData: Partial<EventSetup>,
-    clearExistingRoster: boolean = false,
+    _clearExistingRoster: boolean = false,
     isLive: boolean = false
   ): EventSetup => {
     if (role !== 'super_admin' && role !== 'admin') return event;
     const newId = `event-${Date.now()}`;
     const nextEvent: EventSetup = {
-      ...event,
+      ...INITIAL_EVENT,
       ...eventData,
       id: newId,
       isLive: isLive,
       createdAt: new Date().toISOString(),
     };
 
-    setEvents(prev => {
-      const exists = prev.some(e => e.id === newId);
-      if (exists) return prev.map(e => (e.id === newId ? nextEvent : e));
-      return [...prev, nextEvent];
-    });
+    setEvents(prev => [...prev.filter(e => e.id !== newId), nextEvent]);
     setEvent(nextEvent);
     supabaseUpsertEvent(nextEvent);
 
-    if (clearExistingRoster) {
-      setPlayers([]);
-      setCategories([]);
-      setBrackets([]);
-      supabaseClearPlayers();
-      supabaseClearCategories();
-      supabaseClearBrackets();
-      addAuditLog(
-        'EVENT_SETUP',
-        nextEvent.name || 'New Championship',
-        `Super Admin initialized fresh event ${newId} (status: ${isLive ? 'LIVE' : 'NOT ACTIVE'}, roster and fixtures reset)`
-      );
-    } else {
-      addAuditLog(
-        'EVENT_SETUP',
-        nextEvent.name || 'Tournament Event',
-        `Super Admin created championship event ${newId} (status: ${isLive ? 'LIVE' : 'NOT ACTIVE'})`
-      );
-    }
+    // Fresh championship event scope begins completely clean and isolated
+    setPlayers([]);
+    setCategories([]);
+    setBrackets([]);
+    setSidelineJudgeScores([]);
+
+    addAuditLog(
+      'EVENT_SETUP',
+      nextEvent.name || 'New Championship',
+      `Super Admin created fresh isolated championship event ${newId} (status: ${isLive ? 'LIVE' : 'NOT ACTIVE'}). Prior championships preserved.`
+    );
     return nextEvent;
   };
 
@@ -828,10 +732,31 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     );
   };
 
-  const switchEvent = (eventId: string) => {
+  const switchEvent = async (eventId: string) => {
     const target = events.find(e => e.id === eventId);
     if (!target) return;
+    setIsLoadingData(true);
     setEvent(target);
+    // Immediately clear in-memory presentation buffer to prevent data crossover
+    setPlayers([]);
+    setCategories([]);
+    setBrackets([]);
+    setSidelineJudgeScores([]);
+
+    try {
+      const pullRes = await pullAllDataFromSupabase(eventId);
+      if (pullRes.success && pullRes.data) {
+        setPlayers(pullRes.data.players || []);
+        setCategories(pullRes.data.categories || []);
+        setBrackets(pullRes.data.brackets || []);
+        setSidelineJudgeScores(pullRes.data.sidelineJudgeScores || []);
+      }
+    } catch (err) {
+      console.error(`Error loading data for championship event ${eventId}:`, err);
+    } finally {
+      setIsLoadingData(false);
+    }
+
     addAuditLog('EVENT_SETUP', target.name || eventId, `Active championship switched to: ${target.name} (${target.id})`);
   };
 
@@ -856,14 +781,22 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       setEvents([fallbackEvent]);
       setEvent(fallbackEvent);
       supabaseUpsertEvent(fallbackEvent);
+      setPlayers([]);
+      setCategories([]);
+      setBrackets([]);
     } else {
       setEvents(remaining);
       if (event.id === eventId) {
         setEvent(remaining[0]);
+        switchEvent(remaining[0].id);
       }
     }
 
     supabaseDeleteEvent(eventId);
+    supabaseClearPlayers(eventId);
+    supabaseClearCategories(eventId);
+    supabaseClearBrackets(eventId);
+
     addAuditLog('EVENT_DELETE', target.name || eventId, `Super Admin deleted championship event: ${target.name} (${eventId})`);
     return { success: true };
   };
@@ -988,24 +921,25 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       return { success: false, error: 'General view cannot add players.' };
     }
 
-    // Check duplicate registration or duplicate aadhar
+    // Check duplicate registration or duplicate aadhar within this tournament
     const existing = players.find(
       p => p.registrationNumber.toLowerCase() === playerData.registrationNumber.toLowerCase() ||
            (p.aadharNumber && p.aadharNumber === playerData.aadharNumber)
     );
     if (existing) {
-      return { success: false, error: 'Player with this Registration ID or Aadhar number already exists.' };
+      return { success: false, error: 'Player with this Registration ID or Aadhar number already exists in this tournament.' };
     }
 
     const newPlayer: Player = {
       ...playerData,
       id: `p-${Date.now()}`,
+      eventId: event.id,
       createdAt: new Date().toISOString(),
     };
 
     setPlayers(prev => [newPlayer, ...prev]);
-    supabaseUpsertPlayer(newPlayer);
-    addAuditLog('CREATE', `Player: ${newPlayer.name}`, `Reg #${newPlayer.registrationNumber}, Club: ${newPlayer.clubSchool}, Weight: ${newPlayer.weightKg}kg`);
+    supabaseUpsertPlayer(newPlayer, event.id);
+    addAuditLog('CREATE', `Player: ${newPlayer.name}`, `Reg #${newPlayer.registrationNumber}, Club: ${newPlayer.clubSchool}, Weight: ${newPlayer.weightKg}kg for ${event.name}`);
     return { success: true, player: newPlayer };
   };
 
@@ -1016,9 +950,9 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const target = players.find(p => p.id === id);
     if (!target) return { success: false, error: 'Player not found.' };
 
-    const updatedPlayer = { ...target, ...playerData };
+    const updatedPlayer: Player = { ...target, ...playerData, eventId: event.id };
     setPlayers(prev => prev.map(p => (p.id === id ? updatedPlayer : p)));
-    supabaseUpsertPlayer(updatedPlayer);
+    supabaseUpsertPlayer(updatedPlayer, event.id);
     addAuditLog('UPDATE', `Player: ${target.name}`, `Updated details: ${Object.keys(playerData).join(', ')}`);
     return { success: true };
   };
@@ -1066,6 +1000,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       validNewPlayers.push({
         ...p,
         id: `p-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+        eventId: event.id,
         createdAt: new Date().toISOString(),
       });
       added++;
@@ -1073,16 +1008,16 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     if (replace) {
       setPlayers(validNewPlayers);
-      supabaseClearPlayers().then(() => supabaseBulkUpsertPlayers(validNewPlayers));
+      supabaseClearPlayers(event.id).then(() => supabaseBulkUpsertPlayers(validNewPlayers, event.id));
     } else {
       setPlayers(prev => [...validNewPlayers, ...prev]);
-      supabaseBulkUpsertPlayers(validNewPlayers);
+      supabaseBulkUpsertPlayers(validNewPlayers, event.id);
     }
 
     addAuditLog(
       'CREATE',
       'Bulk Athlete Import',
-      `Imported ${added} athletes (${duplicates} duplicate registrations skipped)`
+      `Imported ${added} athletes (${duplicates} duplicate registrations skipped) into ${event.name}`
     );
 
     return { added, duplicates };
@@ -1090,22 +1025,24 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const clearAllPlayers = () => {
     if (role !== 'super_admin') return;
+    saveSafetySnapshot('pre_clear_players');
     setPlayers([]);
     setCategories([]);
     setBrackets([]);
-    supabaseClearPlayers();
-    supabaseClearCategories();
-    supabaseClearBrackets();
-    addAuditLog('DELETE', 'All Athletes', 'Super Admin cleared player database and related fixtures');
+    supabaseClearPlayers(event.id);
+    supabaseClearCategories(event.id);
+    supabaseClearBrackets(event.id);
+    addAuditLog('DELETE', 'All Athletes', `Super Admin cleared player database and fixtures for event ${event.name} (${event.id})`);
   };
 
   const clearAllCategoriesAndBrackets = () => {
     if (role !== 'super_admin' && role !== 'admin') return;
+    saveSafetySnapshot('pre_clear_fixtures');
     setCategories([]);
     setBrackets([]);
-    supabaseClearCategories();
-    supabaseClearBrackets();
-    addAuditLog('DELETE', 'Categories & Fixtures', 'Super Admin cleared all divisions and tournament brackets');
+    supabaseClearCategories(event.id);
+    supabaseClearBrackets(event.id);
+    addAuditLog('DELETE', 'Categories & Fixtures', `Super Admin cleared all divisions and tournament brackets for ${event.name} (${event.id})`);
   };
 
   // Category operations
@@ -1134,13 +1071,14 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const newCategory: Category = {
       ...catData,
       id: `cat-${Date.now()}`,
+      eventId: event.id,
       isLocked: false,
       eligiblePlayerIds: eligible.map(e => e.id),
     };
 
     setCategories(prev => [...prev, newCategory]);
-    supabaseUpsertCategory(newCategory);
-    addAuditLog('CREATE', `Category: ${newCategory.name}`, `Created with ${eligible.length} matched eligible fighters.`);
+    supabaseUpsertCategory(newCategory, event.id);
+    addAuditLog('CREATE', `Category: ${newCategory.name}`, `Created division in ${event.name} with ${eligible.length} matched fighters.`);
     return newCategory;
   };
 
@@ -1149,13 +1087,14 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setCategories(prev =>
       prev.map(c => {
         if (c.id === categoryId) {
-          const mod = {
+          const mod: Category = {
             ...c,
+            eventId: event.id,
             isLocked: true,
             confirmedAt: new Date().toISOString(),
             confirmedBy: currentUser.name,
           };
-          supabaseUpsertCategory(mod);
+          supabaseUpsertCategory(mod, event.id);
           addAuditLog('LOCK_CATEGORY', `Category: ${c.name}`, `Locked eligible roster (${c.eligiblePlayerIds.length} fighters) for fixture generation.`);
           return mod;
         }
@@ -1169,13 +1108,14 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setCategories(prev =>
       prev.map(c => {
         if (c.id === categoryId) {
-          const mod = {
+          const mod: Category = {
             ...c,
+            eventId: event.id,
             isLocked: false,
             confirmedAt: undefined,
             confirmedBy: undefined,
           };
-          supabaseUpsertCategory(mod);
+          supabaseUpsertCategory(mod, event.id);
           addAuditLog('UPDATE', `Category: ${c.name}`, `Unlocked category roster by ${currentUser.name}.`);
           return mod;
         }
@@ -1218,12 +1158,13 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     try {
       const bracket = generateKnockoutBracket(catPlayers, cat, event, randomize);
+      bracket.eventId = event.id;
       
       setBrackets(prev => {
         const filtered = prev.filter(b => b.categoryId !== categoryId);
         return [...filtered, bracket];
       });
-      supabaseUpsertBracket(bracket);
+      supabaseUpsertBracket(bracket, event.id);
 
       addAuditLog(
         'BRACKET_GENERATE',
@@ -1249,11 +1190,12 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const catPlayers = players.filter(p => cat.eligiblePlayerIds.includes(p.id));
     try {
       const bracket = generateKnockoutBracket(catPlayers, cat, event, true);
+      bracket.eventId = event.id;
       setBrackets(prev => {
         const filtered = prev.filter(b => b.categoryId !== categoryId);
         return [...filtered, bracket];
       });
-      supabaseUpsertBracket(bracket);
+      supabaseUpsertBracket(bracket, event.id);
 
       addAuditLog(
         'BRACKET_REGENERATE',
@@ -1288,11 +1230,13 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       return { success: false, error: 'Bracket not found.' };
     }
 
+    const bracketWithEvent = { ...updatedBracket, eventId: event.id };
+
     // Update in-memory state immediately
-    setBrackets(prev => prev.map(b => (b.id === bracketId ? updatedBracket : b)));
+    setBrackets(prev => prev.map(b => (b.id === bracketId ? bracketWithEvent : b)));
 
     // Sync to Supabase PostgreSQL database
-    supabaseUpsertBracket(updatedBracket);
+    supabaseUpsertBracket(bracketWithEvent, event.id);
 
     // Record audit log entry: individual per modified bout if provided, plus overall summary
     if (individualLogs && individualLogs.length > 0) {
@@ -2367,66 +2311,162 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const resetToDefaults = () => {
     if (role !== 'super_admin') return;
-    try {
-      // Clear all possible tournament local storage keys
-      for (let i = localStorage.length - 1; i >= 0; i--) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith('wushu_tournament_state_')) {
-          localStorage.removeItem(k);
-        }
-      }
-    } catch {
-      // Ignore
-    }
+    saveSafetySnapshot('pre_reset');
 
-    setEvent(INITIAL_EVENT);
-    setEvents([{ ...INITIAL_EVENT, isLive: true }]);
-    setPlayers(INITIAL_PLAYERS);
-    setCategories(INITIAL_CATEGORIES);
-    setBrackets(createInitialBrackets());
-    setUsers(INITIAL_USERS);
-    setAuditLogs(INITIAL_AUDIT_LOGS);
-    setAgeCategoriesState(INITIAL_AGE_CATEGORIES);
-    setWeightCategoriesState(INITIAL_WEIGHT_CATEGORIES);
+    setPlayers([]);
+    setCategories([]);
+    setBrackets([]);
+    setSidelineJudgeScores([]);
     setActiveBoutForScoring(null);
 
-    // Clear and sync with Supabase
-    supabaseClearPlayers();
-    supabaseClearCategories();
-    supabaseClearBrackets();
-    supabaseUpsertEvent(INITIAL_EVENT);
-    supabaseBulkUpsertAgeCategories(INITIAL_AGE_CATEGORIES);
-    supabaseBulkUpsertWeightCategories(INITIAL_WEIGHT_CATEGORIES);
-    addAuditLog('SYSTEM_RESET', 'All Data & Cache', 'Reset tournament state to pristine clean state for official live data');
+    // Clear scoped records for this event in Supabase
+    supabaseClearPlayers(event.id);
+    supabaseClearCategories(event.id);
+    supabaseClearBrackets(event.id);
+    addAuditLog('SYSTEM_RESET', `Event: ${event.name}`, `Reset active championship roster and fixtures for ${event.name} (${event.id})`);
   };
 
   const clearAllCacheAndReset = () => {
-    try {
-      for (let i = localStorage.length - 1; i >= 0; i--) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith('wushu_tournament_state_')) {
-          localStorage.removeItem(k);
-        }
-      }
-    } catch {
-      // Ignore
-    }
+    if (role !== 'super_admin') return;
+    saveSafetySnapshot('pre_reset');
 
-    setEvent(INITIAL_EVENT);
-    setEvents([{ ...INITIAL_EVENT, isLive: true }]);
-    setPlayers(INITIAL_PLAYERS);
-    setCategories(INITIAL_CATEGORIES);
-    setBrackets(createInitialBrackets());
-    setUsers(INITIAL_USERS);
-    setAuditLogs(INITIAL_AUDIT_LOGS);
-    setAgeCategoriesState(INITIAL_AGE_CATEGORIES);
-    setWeightCategoriesState(INITIAL_WEIGHT_CATEGORIES);
+    setPlayers([]);
+    setCategories([]);
+    setBrackets([]);
+    setSidelineJudgeScores([]);
     setActiveBoutForScoring(null);
 
-    supabaseClearPlayers();
-    supabaseClearCategories();
-    supabaseClearBrackets();
-    supabaseUpsertEvent(INITIAL_EVENT);
+    supabaseClearPlayers(event.id);
+    supabaseClearCategories(event.id);
+    supabaseClearBrackets(event.id);
+  };
+
+  const restoreFromSafetySnapshot = (): { success: boolean; message: string } => {
+    try {
+      const snapshot = transientSnapshotRef.current;
+      if (!snapshot || !snapshot.data) {
+        return { success: false, message: 'No in-memory safety backup snapshot found from this session.' };
+      }
+
+      if (snapshot.data.event) setEvent(snapshot.data.event);
+      if (snapshot.data.events && snapshot.data.events.length > 0) setEvents(snapshot.data.events);
+      if (snapshot.data.players && snapshot.data.players.length > 0) setPlayers(snapshot.data.players);
+      if (snapshot.data.categories && snapshot.data.categories.length > 0) setCategories(snapshot.data.categories);
+      if (snapshot.data.brackets && snapshot.data.brackets.length > 0) setBrackets(snapshot.data.brackets);
+      if (snapshot.data.users && snapshot.data.users.length > 0) setUsers(snapshot.data.users);
+      if (snapshot.data.ageCategories && snapshot.data.ageCategories.length > 0) setAgeCategoriesState(snapshot.data.ageCategories);
+      if (snapshot.data.weightCategories && snapshot.data.weightCategories.length > 0) setWeightCategoriesState(snapshot.data.weightCategories);
+      if (snapshot.data.sidelineJudgeScores && snapshot.data.sidelineJudgeScores.length > 0) setSidelineJudgeScores(snapshot.data.sidelineJudgeScores);
+
+      // Push to Supabase to persist cloud copy
+      pushAllDataToSupabase({
+        events: snapshot.data.events || events,
+        players: snapshot.data.players || [],
+        categories: snapshot.data.categories || [],
+        brackets: snapshot.data.brackets || [],
+        users: snapshot.data.users || users,
+        auditLogs,
+        ageCategories: snapshot.data.ageCategories || ageCategories,
+        weightCategories: snapshot.data.weightCategories || weightCategories,
+        sidelineJudgeScores: snapshot.data.sidelineJudgeScores || sidelineJudgeScores,
+      }).catch(() => {});
+
+      addAuditLog(
+        'SAFETY_BACKUP_RESTORE',
+        'Tournament Database',
+        `Restored ${snapshot.playersCount} athletes and ${snapshot.bracketsCount} brackets from session safety backup.`
+      );
+
+      return {
+        success: true,
+        message: `Successfully restored ${snapshot.playersCount} athletes and ${snapshot.bracketsCount} fixtures from session backup.`,
+      };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Failed to restore safety snapshot.' };
+    }
+  };
+
+  const getSafetySnapshotInfo = () => {
+    const snap = transientSnapshotRef.current;
+    if (!snap) return { available: false };
+    return {
+      available: Boolean(snap && snap.data && (snap.playersCount > 0 || snap.bracketsCount > 0)),
+      timestamp: snap.timestamp,
+      playersCount: snap.playersCount || 0,
+      categoriesCount: snap.categoriesCount || 0,
+      bracketsCount: snap.bracketsCount || 0,
+      eventName: snap.eventName,
+    };
+  };
+
+  const exportTournamentBackupJson = () => {
+    try {
+      const backupData = {
+        version: '1.0',
+        exportedAt: new Date().toISOString(),
+        event,
+        events,
+        players,
+        categories,
+        brackets,
+        users,
+        ageCategories,
+        weightCategories,
+        sidelineJudgeScores,
+        auditLogs,
+      };
+      const jsonStr = JSON.stringify(backupData, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `wushu_tournament_backup_${new Date().toISOString().split('T')[0]}_${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export backup JSON', err);
+    }
+  };
+
+  const importTournamentBackupJson = (jsonString: string): { success: boolean; message: string } => {
+    try {
+      const parsed = JSON.parse(jsonString);
+      if (!parsed || typeof parsed !== 'object') {
+        return { success: false, message: 'Invalid backup file format.' };
+      }
+      if (parsed.event) setEvent(parsed.event);
+      if (parsed.events && Array.isArray(parsed.events)) setEvents(parsed.events);
+      if (parsed.players && Array.isArray(parsed.players)) setPlayers(parsed.players);
+      if (parsed.categories && Array.isArray(parsed.categories)) setCategories(parsed.categories);
+      if (parsed.brackets && Array.isArray(parsed.brackets)) setBrackets(parsed.brackets);
+      if (parsed.users && Array.isArray(parsed.users)) setUsers(parsed.users);
+      if (parsed.ageCategories && Array.isArray(parsed.ageCategories)) setAgeCategoriesState(parsed.ageCategories);
+      if (parsed.weightCategories && Array.isArray(parsed.weightCategories)) setWeightCategoriesState(parsed.weightCategories);
+      if (parsed.sidelineJudgeScores && Array.isArray(parsed.sidelineJudgeScores)) setSidelineJudgeScores(parsed.sidelineJudgeScores);
+
+      pushAllDataToSupabase({
+        events: parsed.events || events,
+        players: parsed.players || [],
+        categories: parsed.categories || [],
+        brackets: parsed.brackets || [],
+        users: parsed.users || users,
+        auditLogs,
+        ageCategories: parsed.ageCategories || ageCategories,
+        weightCategories: parsed.weightCategories || weightCategories,
+        sidelineJudgeScores: parsed.sidelineJudgeScores || sidelineJudgeScores,
+      }).catch(() => {});
+
+      addAuditLog('IMPORT_DATA', 'Full Tournament JSON', `Imported backup file with ${parsed.players?.length || 0} athletes.`);
+
+      return {
+        success: true,
+        message: `Successfully restored ${parsed.players?.length || 0} athletes, ${parsed.categories?.length || 0} categories, and ${parsed.brackets?.length || 0} brackets from backup file.`,
+      };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Failed to parse JSON backup file.' };
+    }
   };
 
   const exportDataAsCSV = (type: 'players' | 'bouts' | 'results' | 'audit') => {
@@ -2635,6 +2675,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setSupabaseModalOpen,
         syncToSupabase,
         fetchFromSupabase,
+        isLoadingData,
         role,
         setRole,
         currentUser,
@@ -2712,6 +2753,11 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setActiveTab,
         resetToDefaults,
         clearAllCacheAndReset,
+        saveSafetySnapshot,
+        restoreFromSafetySnapshot,
+        getSafetySnapshotInfo,
+        exportTournamentBackupJson,
+        importTournamentBackupJson,
         exportDataAsCSV,
         exportMasterExcelBackup,
         importMasterWorkbook,
