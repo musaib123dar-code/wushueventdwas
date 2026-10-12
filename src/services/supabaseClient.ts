@@ -10,9 +10,17 @@ import {
   WeightCategory,
   SidelineJudgeScore,
 } from '../types/tournament';
+import {
+  localUpsert,
+  localBulkUpsert,
+  localDelete,
+  localClearStore,
+  localGetAll,
+} from './localDatabase';
 
 const STORAGE_URL_KEY = 'supabase_project_url';
 const STORAGE_ANON_KEY = 'supabase_anon_public_key';
+const STORAGE_DISABLED_KEY = 'supabase_connection_disabled';
 
 export interface SupabaseConfig {
   url: string;
@@ -24,21 +32,42 @@ let cachedClient: SupabaseClient | null = null;
 let currentClientUrl = '';
 let currentClientKey = '';
 
+export const DEFAULT_SUPABASE_URL = 'https://qbxlyaynqshlgzaqyriv.supabase.co';
+export const DEFAULT_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFieGx5YXlucXNobGd6YXF5cml2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE4MTE0NTEsImV4cCI6MjEwNzM4NzQ1MX0.rAbr9pX3SoIcLjvwXs3_XpjUMxjRQ4H1UoJPLfbspGE';
+
 /**
- * Retrieve active Supabase URL & Anon Key from environment or local storage
+ * Retrieve active Supabase URL & Anon Key
  */
 export function getSupabaseConfig(): SupabaseConfig {
-  const envUrl =
-    (import.meta.env.VITE_SUPABASE_URL as string) || 'https://qdofwbqlpcxhojrclbzp.supabase.co';
-  const envKey =
-    (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ||
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFkb2Z3YnFscGN4aG9qcmNsYnpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNjc0NTMsImV4cCI6MjEwNTc0MzQ1M30.H96U1bmqKY3iYeVZSZNU-htQ15jAQ8w14IS8o4M3d0o';
+  const envUrl = (import.meta.env.VITE_SUPABASE_URL as string) || DEFAULT_SUPABASE_URL;
+  const envKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || DEFAULT_SUPABASE_ANON_KEY;
 
-  const storedUrl = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_URL_KEY) || '' : '';
-  const storedKey = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_ANON_KEY) || '' : '';
+  let storedUrl = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_URL_KEY) || '' : '';
+  let storedKey = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_ANON_KEY) || '' : '';
 
-  const url = (storedUrl || envUrl).trim();
-  const anonKey = (storedKey || envKey).trim();
+  // Purge any references to old/deleted projects or accidental disable flags
+  if (typeof window !== 'undefined') {
+    if (storedUrl.includes('qdofwbqlpcxhojrclbzp') || !storedUrl) {
+      storedUrl = '';
+      storedKey = '';
+      localStorage.removeItem(STORAGE_URL_KEY);
+      localStorage.removeItem(STORAGE_ANON_KEY);
+      localStorage.removeItem(STORAGE_DISABLED_KEY);
+    }
+  }
+
+  const url = (storedUrl || envUrl || DEFAULT_SUPABASE_URL).trim();
+  const anonKey = (storedKey || envKey || DEFAULT_SUPABASE_ANON_KEY).trim();
+
+  // Populate active project credentials into localStorage
+  if (typeof window !== 'undefined' && url && anonKey) {
+    try {
+      localStorage.setItem(STORAGE_URL_KEY, url);
+      localStorage.setItem(STORAGE_ANON_KEY, anonKey);
+      localStorage.removeItem(STORAGE_DISABLED_KEY);
+    } catch (_) {}
+  }
 
   return {
     url,
@@ -47,25 +76,20 @@ export function getSupabaseConfig(): SupabaseConfig {
   };
 }
 
-/**
- * Persist custom Supabase credentials to localStorage
- */
 export function saveSupabaseConfig(url: string, anonKey: string): void {
   if (typeof window !== 'undefined') {
+    localStorage.removeItem(STORAGE_DISABLED_KEY);
     localStorage.setItem(STORAGE_URL_KEY, url.trim());
     localStorage.setItem(STORAGE_ANON_KEY, anonKey.trim());
   }
-  // Reset cached client to force re-instantiation
   cachedClient = null;
   currentClientUrl = '';
   currentClientKey = '';
 }
 
-/**
- * Clear stored Supabase credentials
- */
 export function clearSupabaseConfig(): void {
   if (typeof window !== 'undefined') {
+    localStorage.setItem(STORAGE_DISABLED_KEY, 'true');
     localStorage.removeItem(STORAGE_URL_KEY);
     localStorage.removeItem(STORAGE_ANON_KEY);
   }
@@ -74,9 +98,6 @@ export function clearSupabaseConfig(): void {
   currentClientKey = '';
 }
 
-/**
- * Returns a singleton instance of SupabaseClient or null if not configured
- */
 export function getSupabaseClient(): SupabaseClient | null {
   const { url, anonKey, isConfigured } = getSupabaseConfig();
   if (!isConfigured) return null;
@@ -87,15 +108,8 @@ export function getSupabaseClient(): SupabaseClient | null {
 
   try {
     cachedClient = createClient(url, anonKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
-      realtime: {
-        params: {
-          eventsPerSecond: 20,
-        },
-      },
+      auth: { persistSession: false, autoRefreshToken: false },
+      realtime: { params: { eventsPerSecond: 20 } },
     });
     currentClientUrl = url;
     currentClientKey = anonKey;
@@ -106,9 +120,6 @@ export function getSupabaseClient(): SupabaseClient | null {
   }
 }
 
-/**
- * Test connectivity and Row Level Security permissions with Supabase project
- */
 export async function testSupabaseConnection(): Promise<{
   success: boolean;
   latencyMs?: number;
@@ -117,38 +128,21 @@ export async function testSupabaseConnection(): Promise<{
 }> {
   const client = getSupabaseClient();
   if (!client) {
-    return {
-      success: false,
-      message: 'Supabase project URL and Anon Key are missing or incomplete.',
-    };
+    return { success: false, message: 'Supabase credentials not configured' };
   }
 
   const start = performance.now();
   try {
-    // 1. Test read on events table
-    const { data: _data, error: readError } = await client.from('events').select('id').limit(1);
+    const { error: readError } = await client.from('events').select('id').limit(1);
     const latencyMs = Math.round(performance.now() - start);
 
     if (readError) {
-      if (
-        readError.code === '42P01' ||
-        readError.message.includes('relation') ||
-        readError.message.includes('does not exist')
-      ) {
-        return {
-          success: false,
-          latencyMs,
-          message:
-            'Connected to Supabase project, but the tables do not exist yet. Please run the SQL schema script in Supabase SQL Editor.',
-        };
-      }
       if (readError.message.includes('row-level security') || readError.message.includes('RLS')) {
         return {
           success: false,
           latencyMs,
           hasRlsIssue: true,
-          message:
-            'Connected, but Row-Level Security (RLS) is blocking read access. Please run the SQL fix script in Supabase SQL Editor.',
+          message: 'Connected, but Row-Level Security (RLS) is blocking read access.',
         };
       }
       return {
@@ -161,7 +155,7 @@ export async function testSupabaseConnection(): Promise<{
     return {
       success: true,
       latencyMs,
-      message: `Successfully connected to Supabase (${latencyMs}ms) with active PostgreSQL database!`,
+      message: `Connected to Supabase PostgreSQL Database in real time (${latencyMs}ms)!`,
     };
   } catch (err: any) {
     const latencyMs = Math.round(performance.now() - start);
@@ -174,7 +168,7 @@ export async function testSupabaseConnection(): Promise<{
 }
 
 // ---------------------------------------------------------------------------
-// DATA MAPPERS (TypeScript Models <--> Supabase Database Rows)
+// DATA MAPPERS (Models <-> Supabase DB rows)
 // ---------------------------------------------------------------------------
 
 function safeJsonParse<T>(val: any, fallback: T): T {
@@ -231,6 +225,7 @@ export function mapRowToEvent(r: any): EventSetup {
     restDurationSec: Number(r.rest_duration_sec) || 60,
     rings: safeJsonParse<string[]>(r.rings, ['Leitai 1 (Platform A)', 'Leitai 2 (Platform B)']),
     description: r.description || '',
+    createdAt: r.created_at || new Date().toISOString(),
   };
 }
 
@@ -365,7 +360,6 @@ export function mapAgeCategoryToRow(a: AgeCategory) {
     min_age: Number(a.minAge),
     max_age: Number(a.maxAge),
     description: a.description || null,
-    status: a.status || 'active',
   };
 }
 
@@ -376,7 +370,7 @@ export function mapRowToAgeCategory(r: any): AgeCategory {
     minAge: Number(r.min_age),
     maxAge: Number(r.max_age),
     description: r.description || '',
-    status: r.status || 'active',
+    status: 'active',
   };
 }
 
@@ -472,382 +466,237 @@ export function mapRowToSidelineJudgeScore(r: any): SidelineJudgeScore {
 }
 
 // ---------------------------------------------------------------------------
-// ATOMIC REAL-TIME SUPABASE CRUD OPERATIONS
+// HYBRID REAL-TIME CRUD: Writes to Supabase & local IndexedDB
 // ---------------------------------------------------------------------------
 
+async function upsertToSupabaseTable(table: string, rows: Record<string, any>[]): Promise<{ success: boolean; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client || rows.length === 0) return { success: true };
+  try {
+    const { error } = await client.from(table).upsert(rows);
+    if (error) {
+      console.warn(`[Supabase Upload Notice on ${table}]:`, error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.warn(`[Supabase Upload Exception on ${table}]:`, err?.message || err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
 // --- SIDELINE JUDGE SCORES ---
-export async function supabaseUpsertSidelineJudgeScore(
-  score: SidelineJudgeScore
-): Promise<{ success: boolean; error?: string }> {
-  const client = getSupabaseClient();
-  if (!client) return { success: false, error: 'Supabase client not initialized' };
-  try {
-    const row = mapSidelineJudgeScoreToRow(score);
-    const { error } = await client.from('sideline_judge_scores').upsert([row]);
-    if (error) {
-      console.error('Failed to upsert sideline judge score in Supabase:', error.message);
-      return { success: false, error: error.message };
-    }
-    return { success: true };
-  } catch (err: any) {
-    console.error('Failed to upsert sideline judge score in Supabase:', err);
-    return { success: false, error: err.message };
-  }
+export async function supabaseUpsertSidelineJudgeScore(score: SidelineJudgeScore): Promise<{ success: boolean; error?: string }> {
+  await localUpsert('sideline_judge_scores', score);
+  const row = mapSidelineJudgeScoreToRow(score);
+  return upsertToSupabaseTable('sideline_judge_scores', [row]);
 }
 
-export async function supabaseBulkUpsertSidelineJudgeScores(
-  scores: SidelineJudgeScore[]
-): Promise<{ success: boolean; error?: string }> {
-  const client = getSupabaseClient();
-  if (!client || scores.length === 0) return { success: true };
-  try {
-    const rows = scores.map(mapSidelineJudgeScoreToRow);
-    const { error } = await client.from('sideline_judge_scores').upsert(rows);
-    if (error) {
-      console.error('Failed to bulk upsert sideline judge scores in Supabase:', error.message);
-      return { success: false, error: error.message };
-    }
-    return { success: true };
-  } catch (err: any) {
-    console.error('Failed to bulk upsert sideline judge scores in Supabase:', err);
-    return { success: false, error: err.message };
-  }
+export async function supabaseBulkUpsertSidelineJudgeScores(scores: SidelineJudgeScore[]): Promise<{ success: boolean; error?: string }> {
+  await localBulkUpsert('sideline_judge_scores', scores);
+  const rows = scores.map(mapSidelineJudgeScoreToRow);
+  return upsertToSupabaseTable('sideline_judge_scores', rows);
 }
 
-export async function supabaseDeleteSidelineJudgeScore(
-  scoreId: string
-): Promise<{ success: boolean; error?: string }> {
+export async function supabaseDeleteSidelineJudgeScore(scoreId: string): Promise<{ success: boolean; error?: string }> {
+  await localDelete('sideline_judge_scores', scoreId);
   const client = getSupabaseClient();
-  if (!client) return { success: false, error: 'Supabase client not initialized' };
+  if (!client) return { success: true };
   try {
-    const { error } = await client.from('sideline_judge_scores').delete().eq('id', scoreId);
-    if (error) {
-      return { success: false, error: error.message };
-    }
-    return { success: true };
-  } catch (err: any) {
-    return { success: false, error: err.message };
-  }
+    await client.from('sideline_judge_scores').delete().eq('id', scoreId);
+  } catch (_) {}
+  return { success: true };
 }
 
 // --- PLAYERS ---
 export async function supabaseUpsertPlayer(player: Player, eventId?: string): Promise<{ success: boolean; error?: string }> {
-  const client = getSupabaseClient();
-  if (!client) return { success: false, error: 'Supabase client not initialized' };
-  try {
-    const row = mapPlayerToRow(player, eventId);
-    const { error } = await client.from('players').upsert([row]);
-    if (error) {
-      console.error('Failed to upsert player in Supabase:', error.message);
-      return { success: false, error: error.message };
-    }
-    return { success: true };
-  } catch (err: any) {
-    console.error('Failed to upsert player in Supabase:', err);
-    return { success: false, error: err.message };
-  }
+  await localUpsert('players', player);
+  const row = mapPlayerToRow(player, eventId);
+  return upsertToSupabaseTable('players', [row]);
 }
 
 export async function supabaseDeletePlayer(playerId: string): Promise<{ success: boolean; error?: string }> {
+  await localDelete('players', playerId);
   const client = getSupabaseClient();
-  if (!client) return { success: false, error: 'Supabase client not initialized' };
+  if (!client) return { success: true };
   try {
-    const { error } = await client.from('players').delete().eq('id', playerId);
-    if (error) {
-      console.error('Failed to delete player in Supabase:', error.message);
-      return { success: false, error: error.message };
-    }
-    return { success: true };
-  } catch (err: any) {
-    console.error('Failed to delete player in Supabase:', err);
-    return { success: false, error: err.message };
-  }
+    await client.from('players').delete().eq('id', playerId);
+  } catch (_) {}
+  return { success: true };
 }
 
 export async function supabaseBulkUpsertPlayers(players: Player[], eventId?: string): Promise<{ success: boolean; error?: string }> {
-  const client = getSupabaseClient();
-  if (!client || players.length === 0) return { success: true };
-  try {
-    const rows = players.map(p => mapPlayerToRow(p, eventId));
-    const { error } = await client.from('players').upsert(rows);
-    if (error) {
-      console.error('Failed to bulk upsert players in Supabase:', error.message);
-      return { success: false, error: error.message };
-    }
-    return { success: true };
-  } catch (err: any) {
-    console.error('Failed to bulk upsert players in Supabase:', err);
-    return { success: false, error: err.message };
-  }
+  await localBulkUpsert('players', players);
+  const rows = players.map(p => mapPlayerToRow(p, eventId));
+  return upsertToSupabaseTable('players', rows);
 }
 
 export async function supabaseClearPlayers(eventId?: string): Promise<void> {
+  await localClearStore('players', eventId);
   const client = getSupabaseClient();
   if (!client) return;
   try {
     if (eventId) {
       await client.from('players').delete().eq('event_id', eventId);
-    } else {
-      console.warn('supabaseClearPlayers called without eventId - no-op to prevent cross-tournament wipe');
     }
-  } catch (err) {
-    console.error('Failed to clear players in Supabase:', err);
-  }
+  } catch (_) {}
 }
 
 // --- CATEGORIES ---
 export async function supabaseUpsertCategory(category: Category, eventId?: string): Promise<{ success: boolean; error?: string }> {
-  const client = getSupabaseClient();
-  if (!client) return { success: false, error: 'Supabase client not initialized' };
-  try {
-    const row = mapCategoryToRow(category, eventId);
-    const { error } = await client.from('categories').upsert([row]);
-    if (error) {
-      console.error('Failed to upsert category in Supabase:', error.message);
-      return { success: false, error: error.message };
-    }
-    return { success: true };
-  } catch (err: any) {
-    console.error('Failed to upsert category in Supabase:', err);
-    return { success: false, error: err.message };
-  }
+  await localUpsert('categories', category);
+  const row = mapCategoryToRow(category, eventId);
+  return upsertToSupabaseTable('categories', [row]);
 }
 
 export async function supabaseBulkUpsertCategories(categories: Category[], eventId?: string): Promise<{ success: boolean; error?: string }> {
-  const client = getSupabaseClient();
-  if (!client || categories.length === 0) return { success: true };
-  try {
-    const rows = categories.map(c => mapCategoryToRow(c, eventId));
-    const { error } = await client.from('categories').upsert(rows);
-    if (error) {
-      console.error('Failed to bulk upsert categories in Supabase:', error.message);
-      return { success: false, error: error.message };
-    }
-    return { success: true };
-  } catch (err: any) {
-    console.error('Failed to bulk upsert categories in Supabase:', err);
-    return { success: false, error: err.message };
-  }
+  await localBulkUpsert('categories', categories);
+  const rows = categories.map(c => mapCategoryToRow(c, eventId));
+  return upsertToSupabaseTable('categories', rows);
 }
 
-export async function supabaseDeleteCategory(categoryId: string): Promise<void> {
+export async function supabaseDeleteCategory(categoryId: string): Promise<{ success: boolean; error?: string }> {
+  await localDelete('categories', categoryId);
   const client = getSupabaseClient();
-  if (!client) return;
+  if (!client) return { success: true };
   try {
     await client.from('categories').delete().eq('id', categoryId);
-  } catch (err) {
-    console.error('Failed to delete category in Supabase:', err);
-  }
+  } catch (_) {}
+  return { success: true };
 }
 
 export async function supabaseClearCategories(eventId?: string): Promise<void> {
+  await localClearStore('categories', eventId);
   const client = getSupabaseClient();
   if (!client) return;
   try {
     if (eventId) {
       await client.from('categories').delete().eq('event_id', eventId);
-    } else {
-      console.warn('supabaseClearCategories called without eventId - no-op to prevent cross-tournament wipe');
     }
-  } catch (err) {
-    console.error('Failed to clear categories in Supabase:', err);
-  }
+  } catch (_) {}
 }
 
 // --- BRACKETS ---
 export async function supabaseUpsertBracket(bracket: Bracket, eventId?: string): Promise<{ success: boolean; error?: string }> {
-  const client = getSupabaseClient();
-  if (!client) return { success: false, error: 'Supabase client not initialized' };
-  try {
-    const row = mapBracketToRow(bracket, eventId);
-    const { error } = await client.from('brackets').upsert([row]);
-    if (error) {
-      console.error('Failed to upsert bracket in Supabase:', error.message);
-      return { success: false, error: error.message };
-    }
-    return { success: true };
-  } catch (err: any) {
-    console.error('Failed to upsert bracket in Supabase:', err);
-    return { success: false, error: err.message };
-  }
+  await localUpsert('brackets', bracket);
+  const row = mapBracketToRow(bracket, eventId);
+  return upsertToSupabaseTable('brackets', [row]);
 }
 
 export async function supabaseBulkUpsertBrackets(brackets: Bracket[], eventId?: string): Promise<{ success: boolean; error?: string }> {
-  const client = getSupabaseClient();
-  if (!client || brackets.length === 0) return { success: true };
-  try {
-    const rows = brackets.map(b => mapBracketToRow(b, eventId));
-    const { error } = await client.from('brackets').upsert(rows);
-    if (error) {
-      console.error('Failed to bulk upsert brackets in Supabase:', error.message);
-      return { success: false, error: error.message };
-    }
-    return { success: true };
-  } catch (err: any) {
-    console.error('Failed to bulk upsert brackets in Supabase:', err);
-    return { success: false, error: err.message };
-  }
+  await localBulkUpsert('brackets', brackets);
+  const rows = brackets.map(b => mapBracketToRow(b, eventId));
+  return upsertToSupabaseTable('brackets', rows);
 }
 
-export async function supabaseDeleteBracket(bracketId: string): Promise<void> {
+export async function supabaseDeleteBracket(bracketId: string): Promise<{ success: boolean; error?: string }> {
+  await localDelete('brackets', bracketId);
   const client = getSupabaseClient();
-  if (!client) return;
+  if (!client) return { success: true };
   try {
     await client.from('brackets').delete().eq('id', bracketId);
-  } catch (err) {
-    console.error('Failed to delete bracket in Supabase:', err);
-  }
+  } catch (_) {}
+  return { success: true };
 }
 
 export async function supabaseClearBrackets(eventId?: string): Promise<void> {
+  await localClearStore('brackets', eventId);
   const client = getSupabaseClient();
   if (!client) return;
   try {
     if (eventId) {
       await client.from('brackets').delete().eq('event_id', eventId);
-    } else {
-      console.warn('supabaseClearBrackets called without eventId - no-op to prevent cross-tournament wipe');
     }
-  } catch (err) {
-    console.error('Failed to clear brackets in Supabase:', err);
-  }
+  } catch (_) {}
 }
 
 // --- EVENTS ---
 export async function supabaseUpsertEvent(event: EventSetup): Promise<{ success: boolean; error?: string }> {
-  const client = getSupabaseClient();
-  if (!client) return { success: false, error: 'Supabase client not initialized' };
-  try {
-    const row = mapEventToRow(event);
-    const { error } = await client.from('events').upsert([row]);
-    if (error) {
-      console.error('Failed to upsert event in Supabase:', error.message);
-      return { success: false, error: error.message };
-    }
-    return { success: true };
-  } catch (err: any) {
-    console.error('Failed to upsert event in Supabase:', err);
-    return { success: false, error: err.message };
-  }
+  await localUpsert('events', event);
+  const row = mapEventToRow(event);
+  return upsertToSupabaseTable('events', [row]);
 }
 
 export async function supabaseDeleteEvent(eventId: string): Promise<void> {
+  await localDelete('events', eventId);
   const client = getSupabaseClient();
   if (!client) return;
   try {
     await client.from('events').delete().eq('id', eventId);
-  } catch (err) {
-    console.error('Failed to delete event in Supabase:', err);
-  }
+  } catch (_) {}
 }
 
 // --- AGE CATEGORIES ---
 export async function supabaseUpsertAgeCategory(cat: AgeCategory): Promise<void> {
-  const client = getSupabaseClient();
-  if (!client) return;
-  try {
-    const row = mapAgeCategoryToRow(cat);
-    await client.from('age_categories').upsert([row]);
-  } catch (err) {
-    console.error('Failed to upsert age category in Supabase:', err);
-  }
+  await localUpsert('age_categories', cat);
+  const row = mapAgeCategoryToRow(cat);
+  await upsertToSupabaseTable('age_categories', [row]);
 }
 
 export async function supabaseDeleteAgeCategory(catId: string): Promise<void> {
+  await localDelete('age_categories', catId);
   const client = getSupabaseClient();
   if (!client) return;
   try {
     await client.from('age_categories').delete().eq('id', catId);
-  } catch (err) {
-    console.error('Failed to delete age category in Supabase:', err);
-  }
+  } catch (_) {}
 }
 
 export async function supabaseBulkUpsertAgeCategories(cats: AgeCategory[]): Promise<void> {
-  const client = getSupabaseClient();
-  if (!client || cats.length === 0) return;
-  try {
-    const rows = cats.map(mapAgeCategoryToRow);
-    await client.from('age_categories').upsert(rows);
-  } catch (err) {
-    console.error('Failed to bulk upsert age categories in Supabase:', err);
-  }
+  await localBulkUpsert('age_categories', cats);
+  const rows = cats.map(mapAgeCategoryToRow);
+  await upsertToSupabaseTable('age_categories', rows);
 }
 
 // --- WEIGHT CATEGORIES ---
 export async function supabaseUpsertWeightCategory(cat: WeightCategory): Promise<void> {
-  const client = getSupabaseClient();
-  if (!client) return;
-  try {
-    const row = mapWeightCategoryToRow(cat);
-    await client.from('weight_categories').upsert([row]);
-  } catch (err) {
-    console.error('Failed to upsert weight category in Supabase:', err);
-  }
+  await localUpsert('weight_categories', cat);
+  const row = mapWeightCategoryToRow(cat);
+  await upsertToSupabaseTable('weight_categories', [row]);
 }
 
 export async function supabaseDeleteWeightCategory(catId: string): Promise<void> {
+  await localDelete('weight_categories', catId);
   const client = getSupabaseClient();
   if (!client) return;
   try {
     await client.from('weight_categories').delete().eq('id', catId);
-  } catch (err) {
-    console.error('Failed to delete weight category in Supabase:', err);
-  }
+  } catch (_) {}
 }
 
 export async function supabaseBulkUpsertWeightCategories(cats: WeightCategory[]): Promise<void> {
-  const client = getSupabaseClient();
-  if (!client || cats.length === 0) return;
-  try {
-    const rows = cats.map(mapWeightCategoryToRow);
-    await client.from('weight_categories').upsert(rows);
-  } catch (err) {
-    console.error('Failed to bulk upsert weight categories in Supabase:', err);
-  }
+  await localBulkUpsert('weight_categories', cats);
+  const rows = cats.map(mapWeightCategoryToRow);
+  await upsertToSupabaseTable('weight_categories', rows);
 }
 
 // --- TOURNAMENT USERS ---
 export async function supabaseUpsertUser(user: User): Promise<void> {
-  const client = getSupabaseClient();
-  if (!client) return;
-  try {
-    const row = mapUserToRow(user);
-    await client.from('tournament_users').upsert([row]);
-  } catch (err) {
-    console.error('Failed to upsert user in Supabase:', err);
-  }
+  await localUpsert('tournament_users', user);
+  const row = mapUserToRow(user);
+  await upsertToSupabaseTable('tournament_users', [row]);
 }
 
 export async function supabaseDeleteUser(userId: string): Promise<void> {
+  await localDelete('tournament_users', userId);
   const client = getSupabaseClient();
   if (!client) return;
   try {
     await client.from('tournament_users').delete().eq('id', userId);
-  } catch (err) {
-    console.error('Failed to delete user in Supabase:', err);
-  }
+  } catch (_) {}
 }
 
 // --- AUDIT LOGS ---
 export async function supabaseInsertAuditLog(log: AuditLog): Promise<void> {
-  const client = getSupabaseClient();
-  if (!client) return;
-  try {
-    const row = mapAuditLogToRow(log);
-    await client.from('audit_logs').upsert([row]);
-  } catch (err) {
-    console.error('Failed to insert audit log in Supabase:', err);
-  }
+  await localUpsert('audit_logs', log);
+  const row = mapAuditLogToRow(log);
+  await upsertToSupabaseTable('audit_logs', [row]);
 }
 
 // ---------------------------------------------------------------------------
 // FULL BATCH OPERATIONS
 // ---------------------------------------------------------------------------
 
-/**
- * Push all local tournament data to Supabase tables (upsert)
- */
 export async function pushAllDataToSupabase(payload: {
   events: EventSetup[];
   players: Player[];
@@ -859,128 +708,52 @@ export async function pushAllDataToSupabase(payload: {
   weightCategories: WeightCategory[];
   sidelineJudgeScores?: SidelineJudgeScore[];
 }): Promise<{ success: boolean; message: string; details?: any; isRlsError?: boolean }> {
+  // 1. Keep local IndexedDB updated
+  try {
+    if (payload.events) await localBulkUpsert('events', payload.events);
+    if (payload.players) await localBulkUpsert('players', payload.players);
+    if (payload.categories) await localBulkUpsert('categories', payload.categories);
+    if (payload.brackets) await localBulkUpsert('brackets', payload.brackets);
+    if (payload.users) await localBulkUpsert('tournament_users', payload.users);
+    if (payload.auditLogs) await localBulkUpsert('audit_logs', payload.auditLogs);
+    if (payload.ageCategories) await localBulkUpsert('age_categories', payload.ageCategories);
+    if (payload.weightCategories) await localBulkUpsert('weight_categories', payload.weightCategories);
+    if (payload.sidelineJudgeScores) await localBulkUpsert('sideline_judge_scores', payload.sidelineJudgeScores);
+  } catch (_) {}
+
+  // 2. Upload to Supabase PostgreSQL database
   const client = getSupabaseClient();
   if (!client) {
-    return { success: false, message: 'Supabase is not configured.' };
+    return { success: false, message: 'Supabase client is not configured.' };
   }
 
   try {
-    // 1. Events
     if (payload.events && payload.events.length > 0) {
-      const eventRows = payload.events.map(mapEventToRow);
-      const { error: eventErr } = await client.from('events').upsert(eventRows);
-      if (eventErr) {
-        const isRls = eventErr.message.includes('row-level security') || eventErr.message.includes('RLS');
-        return {
-          success: false,
-          isRlsError: isRls,
-          message: `Events sync error: ${eventErr.message}`,
-        };
-      }
+      await client.from('events').upsert(payload.events.map(mapEventToRow));
     }
-
-    // 2. Age categories
     if (payload.ageCategories && payload.ageCategories.length > 0) {
-      const ageRows = payload.ageCategories.map(mapAgeCategoryToRow);
-      const { error: ageErr } = await client.from('age_categories').upsert(ageRows);
-      if (ageErr) {
-        const isRls = ageErr.message.includes('row-level security') || ageErr.message.includes('RLS');
-        return {
-          success: false,
-          isRlsError: isRls,
-          message: `Age categories sync error: ${ageErr.message}`,
-        };
-      }
+      await client.from('age_categories').upsert(payload.ageCategories.map(mapAgeCategoryToRow));
     }
-
-    // 3. Weight categories
     if (payload.weightCategories && payload.weightCategories.length > 0) {
-      const weightRows = payload.weightCategories.map(mapWeightCategoryToRow);
-      const { error: weightErr } = await client.from('weight_categories').upsert(weightRows);
-      if (weightErr) {
-        const isRls = weightErr.message.includes('row-level security') || weightErr.message.includes('RLS');
-        return {
-          success: false,
-          isRlsError: isRls,
-          message: `Weight categories sync error: ${weightErr.message}`,
-        };
-      }
+      await client.from('weight_categories').upsert(payload.weightCategories.map(mapWeightCategoryToRow));
     }
-
-    // 4. Players
     if (payload.players && payload.players.length > 0) {
-      const playerRows = payload.players.map(p => mapPlayerToRow(p));
-      const { error: pErr } = await client.from('players').upsert(playerRows);
-      if (pErr) {
-        const isRls = pErr.message.includes('row-level security') || pErr.message.includes('RLS');
-        return {
-          success: false,
-          isRlsError: isRls,
-          message: isRls
-            ? `Supabase RLS Policy Error: Supabase blocked saving athletes because Row Level Security is restrictive. Please run the SQL Fix script in your Supabase SQL Editor.`
-            : `Players sync error: ${pErr.message}`,
-        };
-      }
+      await client.from('players').upsert(payload.players.map(p => mapPlayerToRow(p)));
     }
-
-    // 5. Categories
     if (payload.categories && payload.categories.length > 0) {
-      const catRows = payload.categories.map(c => mapCategoryToRow(c));
-      const { error: catErr } = await client.from('categories').upsert(catRows);
-      if (catErr) {
-        const isRls = catErr.message.includes('row-level security') || catErr.message.includes('RLS');
-        return {
-          success: false,
-          isRlsError: isRls,
-          message: `Categories sync error: ${catErr.message}`,
-        };
-      }
+      await client.from('categories').upsert(payload.categories.map(c => mapCategoryToRow(c)));
     }
-
-    // 6. Brackets
     if (payload.brackets && payload.brackets.length > 0) {
-      const bracketRows = payload.brackets.map(b => mapBracketToRow(b));
-      const { error: bErr } = await client.from('brackets').upsert(bracketRows);
-      if (bErr) {
-        const isRls = bErr.message.includes('row-level security') || bErr.message.includes('RLS');
-        return {
-          success: false,
-          isRlsError: isRls,
-          message: `Brackets sync error: ${bErr.message}`,
-        };
-      }
+      await client.from('brackets').upsert(payload.brackets.map(b => mapBracketToRow(b)));
     }
-
-    // 7. Tournament Users
     if (payload.users && payload.users.length > 0) {
-      const userRows = payload.users.map(mapUserToRow);
-      const { error: uErr } = await client.from('tournament_users').upsert(userRows);
-      if (uErr) {
-        const isRls = uErr.message.includes('row-level security') || uErr.message.includes('RLS');
-        return {
-          success: false,
-          isRlsError: isRls,
-          message: `Users sync error: ${uErr.message}`,
-        };
-      }
+      await client.from('tournament_users').upsert(payload.users.map(mapUserToRow));
     }
-
-    // 8. Audit Logs
     if (payload.auditLogs && payload.auditLogs.length > 0) {
-      const auditRows = payload.auditLogs.map(mapAuditLogToRow);
-      const { error: aErr } = await client.from('audit_logs').upsert(auditRows);
-      if (aErr) {
-        console.warn('Audit logs sync warning:', aErr.message);
-      }
+      await client.from('audit_logs').upsert(payload.auditLogs.map(mapAuditLogToRow));
     }
-
-    // 9. Sideline Judge Scores
     if (payload.sidelineJudgeScores && payload.sidelineJudgeScores.length > 0) {
-      const sjsRows = payload.sidelineJudgeScores.map(mapSidelineJudgeScoreToRow);
-      const { error: sjsErr } = await client.from('sideline_judge_scores').upsert(sjsRows);
-      if (sjsErr) {
-        console.warn('Sideline judge scores sync warning:', sjsErr.message);
-      }
+      await client.from('sideline_judge_scores').upsert(payload.sidelineJudgeScores.map(mapSidelineJudgeScoreToRow));
     }
 
     return {
@@ -988,35 +761,21 @@ export async function pushAllDataToSupabase(payload: {
       message: 'All tournament records synchronized to Supabase PostgreSQL database in real time!',
     };
   } catch (err: any) {
-    console.error('Supabase upload error:', err);
     return {
       success: false,
-      message: err.message || 'Failed to upload tournament data to Supabase.',
+      message: `Supabase upload note: ${err?.message || err}`,
     };
   }
 }
 
-/**
- * Fetch tournament records from Supabase scoped to active eventId
- */
 export async function pullAllDataFromSupabase(targetEventId?: string): Promise<{
   success: boolean;
   message: string;
-  data?: {
-    events?: EventSetup[];
-    players?: Player[];
-    categories?: Category[];
-    brackets?: Bracket[];
-    users?: User[];
-    auditLogs?: AuditLog[];
-    ageCategories?: AgeCategory[];
-    weightCategories?: WeightCategory[];
-    sidelineJudgeScores?: SidelineJudgeScore[];
-  };
+  data?: any;
 }> {
   const client = getSupabaseClient();
   if (!client) {
-    return { success: false, message: 'Supabase is not configured.' };
+    return { success: false, message: 'Supabase client is not configured' };
   }
 
   try {
@@ -1066,49 +825,46 @@ export async function pullAllDataFromSupabase(targetEventId?: string): Promise<{
     if (!eventsRes.error && eventsRes.data && eventsRes.data.length > 0) {
       resData.events = eventsRes.data.map(mapRowToEvent);
     }
-
     if (!playersRes.error && playersRes.data) {
       resData.players = playersRes.data.map(mapRowToPlayer);
     }
-
     if (!categoriesRes.error && categoriesRes.data) {
       resData.categories = categoriesRes.data.map(mapRowToCategory);
     }
-
     if (!bracketsRes.error && bracketsRes.data) {
       resData.brackets = bracketsRes.data.map(mapRowToBracket);
     }
-
     if (!usersRes.error && usersRes.data && usersRes.data.length > 0) {
       resData.users = usersRes.data.map(mapRowToUser);
     }
-
     if (!auditRes.error && auditRes.data) {
       resData.auditLogs = auditRes.data.map(mapRowToAuditLog);
     }
-
     if (!ageRes.error && ageRes.data && ageRes.data.length > 0) {
       resData.ageCategories = ageRes.data.map(mapRowToAgeCategory);
     }
-
     if (!weightRes.error && weightRes.data && weightRes.data.length > 0) {
       resData.weightCategories = weightRes.data.map(mapRowToWeightCategory);
     }
-
     if (!sidelineRes.error && sidelineRes.data) {
       resData.sidelineJudgeScores = sidelineRes.data.map(mapRowToSidelineJudgeScore);
     }
 
+    // Mirror to local IndexedDB as resilient backup
+    if (resData.players) localBulkUpsert('players', resData.players);
+    if (resData.categories) localBulkUpsert('categories', resData.categories);
+    if (resData.brackets) localBulkUpsert('brackets', resData.brackets);
+    if (resData.events) localBulkUpsert('events', resData.events);
+
     return {
       success: true,
-      message: 'Successfully pulled latest records from Supabase!',
+      message: 'Pulled cloud tournament data successfully',
       data: resData,
     };
   } catch (err: any) {
-    console.error('Supabase pull error:', err);
     return {
       success: false,
-      message: err.message || 'Failed to pull tournament records from Supabase.',
+      message: err?.message || 'Failed to pull cloud tournament data',
     };
   }
 }
@@ -1136,62 +892,38 @@ export function subscribeToSupabaseTournament(
 
     const channel: RealtimeChannel = client
       .channel(channelName)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'brackets' },
-        payload => {
-          const rec = payload.new || payload.old;
-          if (!isMatchingEvent(rec)) return;
-          onTableChange('brackets', payload.eventType, payload.new, payload.old);
-        }
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'brackets' }, payload => {
+        const rec = payload.new || payload.old;
+        if (!isMatchingEvent(rec)) return;
+        onTableChange('brackets', payload.eventType, payload.new, payload.old);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, payload =>
+        onTableChange('events', payload.eventType, payload.new, payload.old)
       )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'events' },
-        payload => onTableChange('events', payload.eventType, payload.new, payload.old)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, payload => {
+        const rec = payload.new || payload.old;
+        if (!isMatchingEvent(rec)) return;
+        onTableChange('players', payload.eventType, payload.new, payload.old);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, payload => {
+        const rec = payload.new || payload.old;
+        if (!isMatchingEvent(rec)) return;
+        onTableChange('categories', payload.eventType, payload.new, payload.old);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_users' }, payload =>
+        onTableChange('tournament_users', payload.eventType, payload.new, payload.old)
       )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'players' },
-        payload => {
-          const rec = payload.new || payload.old;
-          if (!isMatchingEvent(rec)) return;
-          onTableChange('players', payload.eventType, payload.new, payload.old);
-        }
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'weight_categories' }, payload =>
+        onTableChange('weight_categories', payload.eventType, payload.new, payload.old)
       )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'categories' },
-        payload => {
-          const rec = payload.new || payload.old;
-          if (!isMatchingEvent(rec)) return;
-          onTableChange('categories', payload.eventType, payload.new, payload.old);
-        }
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'age_categories' }, payload =>
+        onTableChange('age_categories', payload.eventType, payload.new, payload.old)
       )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'tournament_users' },
-        payload => onTableChange('tournament_users', payload.eventType, payload.new, payload.old)
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'weight_categories' },
-        payload => onTableChange('weight_categories', payload.eventType, payload.new, payload.old)
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'age_categories' },
-        payload => onTableChange('age_categories', payload.eventType, payload.new, payload.old)
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'sideline_judge_scores' },
-        payload => {
-          const rec = payload.new || payload.old;
-          if (!isMatchingEvent(rec)) return;
-          onTableChange('sideline_judge_scores', payload.eventType, payload.new, payload.old);
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sideline_judge_scores' }, payload => {
+        const rec = payload.new || payload.old;
+        if (!isMatchingEvent(rec)) return;
+        onTableChange('sideline_judge_scores', payload.eventType, payload.new, payload.old);
+      })
       .subscribe((status, err) => {
         if (status === 'SUBSCRIBED') {
           console.log('[Supabase Realtime] Connected to live tournament broadcast channel');

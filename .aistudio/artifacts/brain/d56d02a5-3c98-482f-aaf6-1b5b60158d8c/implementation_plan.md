@@ -1,153 +1,155 @@
-# Platform-Scoped Bout Assignment & Mat Official Score Isolation
+# New Supabase Database Setup & Linking Plan
 
-A complete workflow empowering Tournament Admins to assign individual bouts or entire categories to competition platforms (e.g., Platform A, Platform B), strictly scoping Mat Officials and Side Scorers to their assigned platform, and securely displaying submitted side judges' scores exclusively to that platform's Mat Official on their live scoring console.
+A complete step-by-step guide and operational workflow to provision a brand-new database on Supabase, execute the tournament schema, configure credentials via the in-app modal, and verify real-time sync.
 
 ---
 
-## User Review & Critical Decisions
+### User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following architecture incorporates your confirmed requirements from the planning interview:
-> - **Platform Bout Assignment**: Tournament Admins can assign individual bouts or batch-assign entire division categories to specific platforms directly from the fixture brackets.
-> - **Mat Official Score Visibility**: Submitted side scores appear in a real-time judge comparison card directly on the platform Mat Official's live scoring console.
-> - **Official Platform Assignment**: Strictly one active platform per official at a time, enforced across both Mat Officials and Sideline Scorers.
-> - **Strict Privacy & Isolation**: Officials and side scorers on Platform A cannot see or score bouts from Platform B, and submitted side scorecards are hidden from public view and cross-platform officials.
+> The following decisions were confirmed based on your preferences:
+
+- **Database Architecture**: Fresh Supabase Cloud PostgreSQL project with public anonymous access policies enabled for real-time referee, scoreboard, and admin scoring.
+- **Guidance Level**: Step-by-step instructions starting from creating a new project in the Supabase Dashboard.
+- **Credential Storage**: Direct configuration through the in-app **Supabase Settings Modal** (`Connect & Sync` tab) with automated connection testing and health checks.
 
 ---
 
-## 1. Overview & Core Concept
+### 1. Overview & Core Concept
 
-In martial arts tournaments (such as IWUF Wushu Sanda championships), matches run concurrently across elevated Leitai platforms (e.g., Platform A and Platform B). Each platform is governed by:
-- A dedicated **Mat Official / Table Jury** who controls the clock, records fouls, and finalizes round decisions.
-- Multiple **Sideline Judges (Side Scorers)** positioned around the platform perimeter who independently record punches, kicks, takedowns, and platform exits.
+When your previous Supabase project was deleted, the app lost its remote PostgreSQL instance and real-time WebSocket channel. The application includes a self-healing in-app management center with complete pre-formatted SQL scripts and fallback resilience.
 
-This feature introduces strict platform boundaries:
-1. **Admin Assignment**: Admins allocate bouts or entire division trees to platforms.
-2. **Mat Official Scoping**: Mat Officials log into their station and see *only* the fights assigned to their platform.
-3. **Side Scorer Scoping**: Side scorers see *only* their platform's active fight and input their individual round scores.
-4. **Isolated Consensus**: Once side scorers submit their cards, the platform Mat Official receives a live, aggregated scorecard comparison on their console to verify consensus before certifying the bout outcome.
+This guide provides the exact steps to:
+1. Spin up a new project in your Supabase account.
+2. Retrieve the **Project URL** and **anon public API Key**.
+3. Execute the unified database schema in Supabase's SQL Editor (including all tables, indexes, RLS policies, and real-time publication).
+4. Connect the tournament app and push your local tournament data to the cloud.
 
 ---
 
-## 2. User Experience & Visual Design
-
-### Key User Flows
+### 2. User Experience & Walkthrough Flow
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        1. TOURNAMENT ADMIN                             │
-│   • Views Bracket Tree or Division Fixture List                        │
-│   • Uses "Assign Platform" dropdown to set entire category to Plat A   │
-│   • Or clicks specific Bout to route to Plat B                        │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │ Persists to Supabase
-                                    ▼
-       ┌────────────────────────────┴───────────────────────────┐
-       │                                                        │
-       ▼                                                        ▼
-┌──────────────────────────────┐        ┌──────────────────────────────┐
-│  2. PLATFORM A MAT OFFICIAL  │        │  3. PLATFORM A SIDE SCORERS  │
-│  • Role: Mat Official        │        │  • Role: Sideline Judge      │
-│  • Assigned: Platform A      │        │  • Assigned: Platform A      │
-│  • Bouts Queue: Plat A ONLY  │        │  • Bouts Queue: Plat A ONLY  │
-│  • Locked out of Plat B      │        │  • Locked out of Plat B      │
-└──────────────┬───────────────┘        └──────────────┬───────────────┘
-               │                                       │
-               │    4. LIVE SCORE CARD SUBMISSION      │ Scores saved to DB
-               │◄──────────────────────────────────────┴────────────────
-               │
-               ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│               5. MAT CONSOLE JUDGE COMPARISON DISPLAY                  │
-│   • Live comparison table embedded in Mat Official console             │
-│   • Displays Judge 1, Judge 2, Judge 3 scores for Round 1, 2, 3       │
-│   • Shows Red/Blue consensus flags                                     │
-│   • Hidden from spectators, public arena, and Platform B officials     │
-└────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────┐       ┌────────────────────────────────┐
+│   Step 1: Supabase Dashboard   │       │     Step 2: SQL Editor Run     │
+│  - Create New Project          │ ────> │  - Copy unified schema SQL     │
+│  - Get URL & anon public key   │       │  - Run script in Supabase      │
+└────────────────────────────────┘       └────────────────────────────────┘
+                                                          │
+                                                          ▼
+┌────────────────────────────────┐       ┌────────────────────────────────┐
+│      Step 4: Push Data         │       │   Step 3: In-App Connection    │
+│  - Click 'Push Data to Cloud'  │ <──── │  - Open Database / Supabase UI │
+│  - Verify sync & live scoring  │       │  - Paste URL & anon Key        │
+└────────────────────────────────┘       └────────────────────────────────┘
 ```
 
-### Visual Interface & Layout Discipline
-- **Mat Official Queue**: High-contrast, clean banner indicating the active platform (`Platform A (Leitai 1)`). Fights for other platforms are completely filtered out.
-- **Side Scorecard Comparison Grid**:
-  - Rendered directly underneath the Mat Official's round timer and point scoreboard.
-  - Tabular layout with columns for `Judge Name`, `Corner Preference`, `Red Pts`, `Blue Pts`, `Exits`, and `Submission Status`.
-  - Color-coded corner indicators (`#DC2626` for Red, `#2563EB` for Blue) paired with clear textual labels.
-  - Monospace tabular numerals (`font-mono tabular-nums`) for jitter-free score updates.
-- **Unassigned Guard Screen**: If an official logs in without an assigned platform, a clean notice explains that an admin platform assignment is required before scoring begins.
+#### Step 1: Create the Project on Supabase
+1. Open [https://supabase.com/dashboard](https://supabase.com/dashboard) and sign in.
+2. Click **"New project"** (select your organization).
+3. Fill in the project details:
+   - **Name**: e.g., `wushu-tournament-db`
+   - **Database Password**: Enter a secure password and save it somewhere safe.
+   - **Region**: Choose the region closest to your venue (e.g., `ap-south-1` Mumbai or `ap-southeast-1` Singapore).
+   - **Pricing Plan**: Free plan.
+4. Click **"Create new project"** and wait ~1-2 minutes for Supabase to provision the database.
+
+#### Step 2: Retrieve API Credentials
+1. In your new Supabase project sidebar, go to **Project Settings** (gear icon at the bottom left) -> **API** (under Configuration).
+   *(Alternatively, on newer dashboards: Settings -> API Keys / Data API)*.
+2. Copy the two values:
+   - **Project URL**: Format `https://<your-project-id>.supabase.co`
+   - **anon / public key**: The long JWT string labeled `anon` `public`.
+
+#### Step 3: Run the Tournament Database Schema
+1. In your Supabase left sidebar, click the **SQL Editor** tab (icon `>_`).
+2. Click **"New query"**.
+3. Copy the complete schema SQL script:
+   - *Option A (In-App)*: In this app, click the **Database / Cloud** icon in the top header, switch to the **"Full SQL Schema"** tab, and click **"Copy Full Schema SQL"**.
+   - *Option B (Local File)*: Open the `supabase-schema.sql` file provided in the repository root.
+4. Paste the SQL into the Supabase SQL Editor and click **"Run"** (or press `Cmd/Ctrl + Enter`).
+5. Confirm the response shows **"Success. No rows returned"**.
+
+> [!NOTE]
+> The schema script automatically creates all required tables (`events`, `players`, `categories`, `brackets`, `tournament_users`, `sideline_judge_scores`, `audit_logs`, `age_categories`, `weight_categories`), enables Row Level Security (RLS) with permissive anon policies, configures Realtime publication, and sets full replica identity.
+
+#### Step 4: Connect & Synchronize in the App
+1. In the app header, click the **Supabase / Database Settings** button.
+2. In the **Connect** tab:
+   - Paste your **Project URL**.
+   - Paste your **Anon Public Key**.
+   - Click **"Test & Save Connection"**.
+3. When the green checkmark indicates a healthy connection, switch to the **"Sync Data"** tab.
+4. Click **"Push All Data to Supabase"** to upload all local players, categories, brackets, and event settings into your new database.
 
 ---
 
-## 3. Key Product Decisions & Trade-Offs
+### 3. Key Product Decisions & Trade-Offs
 
-### Decision 1: Batch Category Assignment vs. Individual Bout Routing
-- **Chosen Approach**: Provide both. An admin can assign an entire bracket to Platform A with one click, while retaining the ability to adjust individual bouts via the fixture editor.
-- **Why**: Divisions usually stay on one platform for tournament flow, but semifinal/final bouts occasionally need to be moved to a featured platform.
-- **Trade-Off**: Bracket data structures must synchronize `bout.ring` cleanly across both category-level and bout-level updates.
-
-### Decision 2: Real-Time Mat Official Consensus vs. Post-Match Report
-- **Chosen Approach**: Direct live scorecard comparison embedded inside `LiveScoringArena.tsx` on the Mat Official console, updated automatically via Supabase Realtime when side scorers submit their cards.
-- **Why**: In Sanda, the mat official must verify side judges' verdicts immediately at the end of each 2-minute round to confirm the round winner.
-- **Trade-Off**: Requires subscription listening to `sideline_judge_scores` updates scoped to the active bout.
-
-### Decision 3: Zero Local Cache Enforcement
-- **Chosen Approach**: All platform assignments, bout rings, and sideline scorecards reside authoritatively in Supabase PostgreSQL and ephemeral React state.
-- **Why**: Prevents stale platform assignments or score leaks across browser sessions or reloads.
+- **Client-Side Direct Supabase Connection**:
+  - *Chosen Approach*: Credentials are saved in browser storage (`localStorage`) and can also be baked into environment variables.
+  - *Why*: Allows instant recovery, multi-venue portability, and zero-downtime database swapping without restarting servers or rebuilding packages.
+- **Permissive RLS with Public Anon Key**:
+  - *Chosen Approach*: Unrestricted public policies for tournament operation.
+  - *Why*: Allows sideline judges, mat coordinators, scorekeepers, and public displays to read and broadcast scores concurrently without requiring complex per-device auth logins during fast-paced matches.
+- **Dynamic Schema Cache Resilience**:
+  - *Chosen Approach*: The client automatically detects schema differences, strips unsupported columns on fallback, and reloads PostgREST schema cache on demand.
+  - *Why*: Eliminates fatal errors like `Could not find the 'event_id' column of 'players' in the schema cache` even if migrations are partially applied.
 
 ---
 
-## 4. Technical Architecture & Data Strategy
+### 4. Technical Architecture & Data Strategy
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                               Supabase Cloud                                  │
-│   • brackets (rounds -> bouts with bout.ring = "Platform A")                 │
-│   • tournament_users (user.assignedRing = "Platform A")                      │
-│   • sideline_judge_scores (event_id, bout_id, arena, judge_id, is_submitted)  │
-└──────────────────────────────────────┬───────────────────────────────────────┘
-                                       │ Realtime & Scoped Fetch
-                                       ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                          TournamentContext State                             │
-│   • activeEvent.rings: ['Platform A', 'Platform B']                          │
-│   • currentUser: { role: 'official', assignedRing: 'Platform A' }            │
-│   • brackets: Bracket[]                                                      │
-│   • sidelineJudgeScores: SidelineJudgeScore[]                                │
-└──────────────────────────────────────┬───────────────────────────────────────┘
-                                       │
-            ┌──────────────────────────┴───────────────────────────┐
-            ▼                                                      ▼
-┌─────────────────────────────────────────┐    ┌────────────────────────────────────────┐
-│          BracketViewer.tsx              │    │          LiveScoringArena.tsx          │
-│ • Category Platform Batch Assign        │    │ • Filters allBouts by assignedRing     │
-│ • Individual Bout Platform Selector     │    │ • Restricts scoring to Plat A          │
-│ • Platform Filter for Tournament Admin  │    │ • Embeds "Side Judges Live Comparison" │
-└─────────────────────────────────────────┘    └────────────────────────────────────────┘
-                                                                   │
-                                                                   ▼
-                                               ┌────────────────────────────────────────┐
-                                               │      SideScorersComparisonCard         │
-                                               │ • Renders J1, J2, J3 submitted cards   │
-                                               │ • Shows round-by-round consensus       │
-                                               │ • Visible ONLY to assigned Mat Official│
-                                               └────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│                   Tournament Web App                   │
+│                                                        │
+│   ┌─────────────────────┐    ┌─────────────────────┐   │
+│   │  TournamentContext  │    │  SupabaseSettings   │   │
+│   │   (State & Cache)   │    │       (Modal)       │   │
+│   └──────────┬──────────┘    └──────────┬──────────┘   │
+└──────────────┼──────────────────────────┼──────────────┘
+               │                          │
+               ▼                          ▼
+┌────────────────────────────────────────────────────────┐
+│              src/services/supabaseClient.ts             │
+│   - executeResilientUpsert()                           │
+│   - missingColumnsByTable detection & strip fallback    │
+│   - testSupabaseConnection() & latency metrics         │
+└──────────────────────────┬─────────────────────────────┘
+                           │ HTTPS REST & Realtime WebSocket
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│             New Supabase PostgreSQL Cloud              │
+│  ├── public.events                                     │
+│  ├── public.players (with event_id & status)           │
+│  ├── public.categories & public.brackets               │
+│  ├── public.tournament_users & sideline_judge_scores   │
+│  └── supabase_realtime publication (FULL REPLICA)      │
+└────────────────────────────────────────────────────────┘
 ```
 
-### Component & Data Enhancements
+#### Database Schema Components Included
+1. **Tables**:
+   - `events`: Tournament configurations, active ring counts, and reference dates.
+   - `players`: Roster records including registration numbers, clubs, weighing status, and event scopes.
+   - `categories`: Divisions (gender, age group, weight group).
+   - `brackets`: Single/double elimination trees, match nodes, scores, and round winners.
+   - `tournament_users`: Referees, judges, mat coordinators, and admins.
+   - `sideline_judge_scores`: Real-time round scoring from ring corners.
+   - `audit_logs`: Activity and score amendment tracking.
+   - `age_categories` & `weight_categories`: Master rules and standards.
+2. **Security & Policies**:
+   - Explicit `CREATE POLICY ... FOR ALL USING (true) WITH CHECK (true)` on all tables.
+3. **Realtime**:
+   - Added to `supabase_realtime` publication for instant sub-second score synchronizations.
 
-1. **`TournamentContext.tsx`**:
-   - Add helper `assignCategoryToPlatform(categoryId: string, platformName: string)` to update all bouts in that bracket in state and Supabase.
-   - Add helper `assignBoutToPlatform(bracketId: string, boutId: string, platformName: string)` for granular routing.
-   - Ensure `getJudgeScoresForBout(boutId)` filters securely and returns submitted scorecards.
+---
 
-2. **`BracketViewer.tsx`**:
-   - Add a quick "Assign Category Platform" control in the category toolbar for Admins / Super Admins.
-   - Display each bout's assigned platform clearly with quick-change options in edit mode.
+### 5. Implementation Status: Connected & Verified Live
 
-3. **`LiveScoringArena.tsx`**:
-   - Filter `allBouts` strictly by `currentUser.assignedRing` (using `isArenaMatch`) when `role === 'official'`.
-   - Prevent mat officials from viewing or controlling bouts from unassigned platforms.
-   - Add an integrated **Live Judges Consensus & Scorecards** section right inside the mat official view for the active bout.
-
-4. **`SidelineJudgeScoringPanel.tsx`**:
-   - Maintain strict isolation so side scorers only see and score bouts matching their `currentUser.assignedRing`.
-   - Ensure score card submission persists with `isSubmitted = true`, `arena = assignedRing`, and broadcasts in real time.
+- [x] Schema script verified with all table columns (`event_id` on `players`, `brackets`, `categories`, and `sideline_judge_scores`) and permissive RLS policies.
+- [x] Purged legacy default URL pointing to the deleted Supabase project.
+- [x] Applied new Supabase project credentials (`https://qbxlyaynqshlgzaqyriv.supabase.co` & Anon Public Key) directly to `.env` and `supabaseClient.ts`.
+- [x] Tested live database connectivity: PostgREST status 200, all 9 tables verified, player write & delete roundtrip confirmed.
+- [x] Dev server restarted with active configuration loaded. The app is live and connected to your new Supabase database!

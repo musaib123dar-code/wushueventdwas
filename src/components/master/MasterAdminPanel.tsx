@@ -553,7 +553,7 @@ export const MasterAdminPanel: React.FC = () => {
                 ? 'bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 border-emerald-500/40 shadow-xs shadow-emerald-500/20'
                 : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700 hover:border-emerald-500/40'
             }`}
-            title="Configure Supabase Cloud Backend, live sync & SQL Schema"
+            title="Configure Supabase Cloud Backend, live sync & PostgreSQL tables"
           >
             <Zap className={`w-3.5 h-3.5 ${supabaseStatus === 'connected' ? 'text-emerald-400' : 'text-slate-400'}`} />
             <span>{supabaseStatus === 'connected' ? 'Supabase Live' : 'Supabase DB'}</span>
@@ -1486,7 +1486,7 @@ export const MasterAdminPanel: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-xs text-slate-400 leading-relaxed">
-                    Manage real-time cloud persistence, cross-device spectator synchronization, database credentials, and SQL schema tables.
+                    Manage real-time cloud persistence, cross-device spectator synchronization, database credentials, and PostgreSQL tables.
                   </p>
                 </div>
                 <button

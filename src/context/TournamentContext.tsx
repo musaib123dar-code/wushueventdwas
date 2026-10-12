@@ -38,9 +38,9 @@ import {
 } from '../utils/tournamentHelpers';
 import { isArenaMatch } from '../utils/arenaMatcher';
 import { exportMasterFullBackup } from '../utils/excelMasterHelper';
+import { testLocalDatabase } from '../services/localDatabase';
 import {
   getSupabaseConfig,
-  getSupabaseClient,
   testSupabaseConnection,
   pushAllDataToSupabase,
   pullAllDataFromSupabase,
@@ -80,6 +80,7 @@ import {
 
 interface TournamentContextType {
   supabaseStatus: 'connected' | 'disconnected' | 'connecting' | 'not_configured' | 'error';
+  setSupabaseStatus: (status: 'connected' | 'disconnected' | 'connecting' | 'not_configured' | 'error') => void;
   supabaseModalOpen: boolean;
   setSupabaseModalOpen: (open: boolean) => void;
   syncToSupabase: () => Promise<{ success: boolean; message: string }>;
@@ -302,44 +303,21 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   // ----------------------------------------------------
-  // SUPABASE CLOUD INITIALIZATION & AUTHORITATIVE PULL
+  // SUPABASE CLOUD INITIALIZATION & REALTIME PULL
   // ----------------------------------------------------
   useEffect(() => {
-    const config = getSupabaseConfig();
-    if (!config.isConfigured) {
-      setSupabaseStatus('not_configured');
-      setIsLoadingData(false);
-      return;
-    }
-
     setSupabaseStatus('connecting');
     testSupabaseConnection()
-      .then(async res => {
+      .then(async (res: { success: boolean; message: string }) => {
         if (res.success) {
-          setSupabaseStatus('connected');
           try {
-            const client = getSupabaseClient();
-            let targetEvent = INITIAL_EVENT;
-
-            // 1. Fetch available championship events from Supabase
-            if (client) {
-              const { data: dbEvents } = await client.from('events').select('*').order('created_at', { ascending: false });
-              if (dbEvents && dbEvents.length > 0) {
-                const mappedEvents = dbEvents.map(mapRowToEvent);
-                setEvents(mappedEvents);
-                // Default to first live event, or latest created event
-                const activeEv = mappedEvents.find((e: EventSetup) => e.isLive) || mappedEvents[0];
-                targetEvent = activeEv;
-                setEvent(activeEv);
-              } else {
-                // Initialize default event row in Supabase
-                await supabaseUpsertEvent(INITIAL_EVENT);
-              }
-            }
-
-            // 2. Authoritative pull: query records filtered strictly by targetEvent.id
-            const pullRes = await pullAllDataFromSupabase(targetEvent.id);
+            const pullRes = await pullAllDataFromSupabase(event.id);
             if (pullRes.success && pullRes.data) {
+              if (pullRes.data.events && pullRes.data.events.length > 0) {
+                setEvents(pullRes.data.events);
+                const activeEv = pullRes.data.events.find((e: EventSetup) => e.isLive) || pullRes.data.events[0];
+                setEvent(activeEv);
+              }
               if (pullRes.data.ageCategories && pullRes.data.ageCategories.length > 0) {
                 setAgeCategoriesState(pullRes.data.ageCategories);
               }
@@ -350,14 +328,19 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 setUsers(pullRes.data.users);
               }
 
-              // Strictly populate from cloud records for this event scope
+              // Load all records
               setPlayers(pullRes.data.players || []);
               setCategories(pullRes.data.categories || []);
               setBrackets(pullRes.data.brackets || []);
               setSidelineJudgeScores(pullRes.data.sidelineJudgeScores || []);
+              if (pullRes.data.auditLogs && pullRes.data.auditLogs.length > 0) {
+                setAuditLogs(pullRes.data.auditLogs);
+              }
             }
-          } catch (err) {
-            console.error('Error during cloud tournament pull:', err);
+            setSupabaseStatus('connected');
+          } catch (err: unknown) {
+            console.error('Error loading Supabase tournament database:', err);
+            setSupabaseStatus('error');
           } finally {
             setIsLoadingData(false);
           }
@@ -366,7 +349,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           setIsLoadingData(false);
         }
       })
-      .catch(err => {
+      .catch((err: unknown) => {
         console.error('Supabase connection error:', err);
         setSupabaseStatus('error');
         setIsLoadingData(false);
@@ -413,7 +396,6 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           if (idx >= 0) return prev.map(item => (item.id === b.id ? b : item));
           return [...prev, b];
         });
-        // Keep active live scoring / spectator bout in sync in real-time
         setActiveBoutForScoring(curr => {
           if (!curr) return null;
           const matched = findBoutInRounds(b.rounds, curr.id);
@@ -480,7 +462,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     };
   }, [supabaseStatus, event?.id]);
 
-  // Periodic heartbeat sync (every 25 seconds) strictly for active event
+  // Periodic sync heartbeat every 20 seconds
   useEffect(() => {
     if (supabaseStatus !== 'connected' || !event?.id) return;
     const interval = setInterval(() => {
@@ -500,11 +482,11 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           }
         }
       }).catch(() => {});
-    }, 25000);
+    }, 20000);
     return () => clearInterval(interval);
   }, [supabaseStatus, event?.id]);
 
-  // Sync all current state to Supabase
+  // Sync current state to Supabase
   const syncToSupabase = async (): Promise<{ success: boolean; message: string }> => {
     const res = await pushAllDataToSupabase({
       events,
@@ -531,7 +513,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       if (res.success && res.data) {
         if (res.data.events && res.data.events.length > 0) {
           const currentId = event.id;
-          const matched = res.data.events.find(e => e.id === currentId) || res.data.events[0];
+          const matched = res.data.events.find((e: EventSetup) => e.id === currentId) || res.data.events[0];
           setEvents(res.data.events);
           setEvent(matched);
         }
@@ -2830,6 +2812,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     <TournamentContext.Provider
       value={{
         supabaseStatus,
+        setSupabaseStatus,
         supabaseModalOpen,
         setSupabaseModalOpen,
         syncToSupabase,

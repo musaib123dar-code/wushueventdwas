@@ -228,9 +228,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                   ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300'
                   : supabaseStatus === 'connecting'
                   ? 'bg-amber-950/30 border-amber-500/40 text-amber-300'
-                  : supabaseStatus === 'error'
-                  ? 'bg-rose-950/30 border-rose-500/40 text-rose-300'
-                  : 'bg-slate-900 border-slate-800 text-slate-300'
+                  : 'bg-rose-950/30 border-rose-500/40 text-rose-300'
               }`}
             >
               <div className="flex items-center gap-2">
@@ -238,16 +236,14 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
                 <span className="font-semibold">Supabase PostgreSQL DB</span>
               </div>
               <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase">
-                <span>{supabaseStatus === 'connected' ? 'LIVE' : supabaseStatus === 'connecting' ? 'SYNC' : supabaseStatus === 'error' ? 'ERR' : 'SETUP'}</span>
+                <span>{supabaseStatus === 'connected' ? 'LIVE' : supabaseStatus === 'connecting' ? 'SYNC' : 'ERROR'}</span>
                 <span
                   className={`w-2 h-2 rounded-full ${
                     supabaseStatus === 'connected'
                       ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]'
                       : supabaseStatus === 'connecting'
                       ? 'bg-amber-400 animate-ping'
-                      : supabaseStatus === 'error'
-                      ? 'bg-rose-500'
-                      : 'bg-slate-500'
+                      : 'bg-rose-500'
                   }`}
                 />
               </div>

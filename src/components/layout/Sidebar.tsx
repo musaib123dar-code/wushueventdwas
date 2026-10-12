@@ -164,11 +164,9 @@ export const Sidebar: React.FC = () => {
                 ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-300 hover:bg-emerald-950/40'
                 : supabaseStatus === 'connecting'
                 ? 'bg-amber-950/20 border-amber-500/30 text-amber-300 hover:bg-amber-950/40'
-                : supabaseStatus === 'error'
-                ? 'bg-rose-950/20 border-rose-500/30 text-rose-300 hover:bg-rose-950/40'
-                : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:bg-slate-900'
+                : 'bg-rose-950/20 border-rose-500/30 text-rose-300 hover:bg-rose-950/40'
             }`}
-            title="Click to open Supabase Database Settings & Sync"
+            title="Click to open Supabase Cloud Database Settings & Sync"
           >
             <div className="flex items-center gap-1.5 font-bold text-[11px]">
               <Database className="w-3.5 h-3.5 text-slate-300" />
@@ -176,7 +174,7 @@ export const Sidebar: React.FC = () => {
             </div>
             <div className="flex items-center gap-1.5">
               <span className="font-mono text-[10px] tracking-wider uppercase">
-                {supabaseStatus === 'connected' ? 'CONNECTED' : supabaseStatus === 'connecting' ? 'SYNCING...' : supabaseStatus === 'error' ? 'ERROR' : 'CONFIG'}
+                {supabaseStatus === 'connected' ? 'CONNECTED' : supabaseStatus === 'connecting' ? 'SYNCING...' : 'ERROR'}
               </span>
               <span
                 className={`w-1.5 h-1.5 rounded-full ${
@@ -184,9 +182,7 @@ export const Sidebar: React.FC = () => {
                     ? 'bg-emerald-400'
                     : supabaseStatus === 'connecting'
                     ? 'bg-amber-400 animate-ping'
-                    : supabaseStatus === 'error'
-                    ? 'bg-rose-500'
-                    : 'bg-slate-500'
+                    : 'bg-rose-500'
                 }`}
               />
             </div>

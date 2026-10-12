@@ -6,9 +6,6 @@ import {
   RefreshCw,
   UploadCloud,
   DownloadCloud,
-  Copy,
-  Check,
-  ExternalLink,
   X,
   Zap,
   Server,
@@ -16,7 +13,6 @@ import {
   Globe,
   Radio,
   Trash2,
-  ShieldAlert,
   ShieldCheck,
 } from 'lucide-react';
 import {
@@ -25,7 +21,6 @@ import {
   clearSupabaseConfig,
   testSupabaseConnection,
 } from '../../services/supabaseClient';
-import { SUPABASE_SQL_SCHEMA, SUPABASE_RLS_QUICK_FIX } from '../../services/supabaseSchema';
 import { useTournament } from '../../context/TournamentContext';
 
 interface SupabaseSettingsModalProps {
@@ -38,24 +33,22 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({ is
     syncToSupabase,
     fetchFromSupabase,
     supabaseStatus,
+    setSupabaseStatus,
     events,
     players,
     categories,
     brackets,
   } = useTournament();
 
-  const [activeTab, setActiveTab] = useState<'connect' | 'sync' | 'rls-fix' | 'sql'>('connect');
+  const [activeTab, setActiveTab] = useState<'status' | 'credentials' | 'sync'>('status');
   const [url, setUrl] = useState('');
   const [anonKey, setAnonKey] = useState('');
   const [testing, setTesting] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [copiedSql, setCopiedSql] = useState(false);
-  const [copiedRls, setCopiedRls] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{
     type: 'success' | 'error' | 'info';
     text: string;
     latency?: number;
-    hasRlsIssue?: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -79,7 +72,6 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({ is
       return;
     }
 
-    // Save
     saveSupabaseConfig(url.trim(), anonKey.trim());
     setTesting(true);
     setStatusMessage(null);
@@ -88,20 +80,18 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({ is
     setTesting(false);
 
     if (res.success) {
+      setSupabaseStatus('connected');
       setStatusMessage({
         type: 'success',
         text: res.message,
         latency: res.latencyMs,
       });
     } else {
+      setSupabaseStatus('error');
       setStatusMessage({
         type: 'error',
         text: res.message,
-        hasRlsIssue: res.hasRlsIssue,
       });
-      if (res.hasRlsIssue) {
-        setActiveTab('rls-fix');
-      }
     }
   };
 
@@ -111,7 +101,7 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({ is
     setAnonKey('');
     setStatusMessage({
       type: 'info',
-      text: 'Supabase configuration cleared. The app is now using local persistent storage.',
+      text: 'Supabase configuration cleared. The app will use local storage.',
     });
   };
 
@@ -121,20 +111,10 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({ is
     const res = await syncToSupabase();
     setSyncing(false);
 
-    if (res.success) {
-      setStatusMessage({
-        type: 'success',
-        text: res.message,
-      });
-    } else {
-      setStatusMessage({
-        type: 'error',
-        text: res.message,
-      });
-      if (res.message.includes('row-level security') || res.message.includes('RLS')) {
-        setActiveTab('rls-fix');
-      }
-    }
+    setStatusMessage({
+      type: res.success ? 'success' : 'error',
+      text: res.message,
+    });
   };
 
   const handlePullData = async () => {
@@ -143,404 +123,313 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({ is
     const res = await fetchFromSupabase();
     setSyncing(false);
 
-    if (res.success) {
-      setStatusMessage({
-        type: 'success',
-        text: res.message,
-      });
-    } else {
-      setStatusMessage({
-        type: 'error',
-        text: res.message,
-      });
-    }
-  };
-
-  const copySqlToClipboard = () => {
-    navigator.clipboard.writeText(SUPABASE_SQL_SCHEMA);
-    setCopiedSql(true);
-    setTimeout(() => setCopiedSql(false), 3000);
-  };
-
-  const copyRlsFixToClipboard = () => {
-    navigator.clipboard.writeText(SUPABASE_RLS_QUICK_FIX);
-    setCopiedRls(true);
-    setTimeout(() => setCopiedRls(false), 3000);
+    setStatusMessage({
+      type: res.success ? 'success' : 'error',
+      text: res.message,
+    });
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn">
-      <div className="bg-slate-900 border border-slate-700/80 rounded-2xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl space-y-5 max-h-[92vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+      <div className="relative w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-start justify-between border-b border-slate-800 pb-4 shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/60 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-md shadow-emerald-950/40">
-              <Zap className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+              <Database className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
-                  Supabase Real-Time Backend
-                </h3>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                  PostgreSQL Realtime
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <span>Supabase Cloud PostgreSQL Database</span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                    supabaseStatus === 'connected'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                  }`}
+                >
+                  {supabaseStatus === 'connected' ? 'LIVE SYNC ACTIVE' : 'CONNECTING...'}
                 </span>
-              </div>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Instant real-time synchronization across Admin, Ring Officials, and Public Spectators
+              </h2>
+              <p className="text-xs text-slate-400">
+                Real-time cloud database for multi-mat live scoring & spectator boards
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center gap-2 border-b border-slate-800 pb-2 text-xs font-semibold shrink-0 overflow-x-auto">
+        <div className="flex border-b border-slate-800 bg-slate-950/40 px-6 gap-2 shrink-0">
           <button
-            onClick={() => setActiveTab('connect')}
-            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
-              activeTab === 'connect'
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                : 'text-slate-400 hover:text-slate-200'
+            onClick={() => setActiveTab('status')}
+            className={`py-3 px-3 text-xs font-bold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'status'
+                ? 'border-emerald-500 text-emerald-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Server className="w-3.5 h-3.5" />
-            <span>Connection & Keys</span>
+            <Radio className="w-3.5 h-3.5" />
+            <span>Connection Status</span>
           </button>
           <button
             onClick={() => setActiveTab('sync')}
-            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
+            className={`py-3 px-3 text-xs font-bold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
               activeTab === 'sync'
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                : 'text-slate-400 hover:text-slate-200'
+                ? 'border-emerald-500 text-emerald-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             <RefreshCw className="w-3.5 h-3.5" />
-            <span>Data Sync & Tables</span>
+            <span>Cloud Sync</span>
           </button>
           <button
-            onClick={() => setActiveTab('rls-fix')}
-            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
-              activeTab === 'rls-fix'
-                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                : 'text-amber-400/80 hover:text-amber-300'
+            onClick={() => setActiveTab('credentials')}
+            className={`py-3 px-3 text-xs font-bold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'credentials'
+                ? 'border-emerald-500 text-emerald-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
-            <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
-            <span>1-Click RLS Fix</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('sql')}
-            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
-              activeTab === 'sql'
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Database className="w-3.5 h-3.5" />
-            <span>Full SQL Schema</span>
+            <Key className="w-3.5 h-3.5" />
+            <span>API Credentials</span>
           </button>
         </div>
 
-        {/* Status alert message */}
-        {statusMessage && (
-          <div
-            className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-2 shrink-0 ${
-              statusMessage.type === 'success'
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                : statusMessage.type === 'error'
-                ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
-                : 'bg-slate-800/60 border-slate-700 text-slate-300'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              {statusMessage.type === 'success' ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              ) : statusMessage.type === 'error' ? (
-                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-              ) : (
-                <Radio className="w-4 h-4 text-slate-400 shrink-0" />
-              )}
-              <span className="leading-relaxed">{statusMessage.text}</span>
-            </div>
-            {statusMessage.latency !== undefined && (
-              <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 shrink-0">
-                {statusMessage.latency} ms
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* Content Area */}
-        <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-xs">
-          {/* TAB 1: Connect & Keys */}
-          {activeTab === 'connect' && (
+        {/* Body Content */}
+        <div className="p-6 overflow-y-auto space-y-5 flex-1">
+          {/* TAB 1: Live Status */}
+          {activeTab === 'status' && (
             <div className="space-y-4">
-              <div className="p-3.5 bg-slate-950/60 border border-slate-800 rounded-xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-slate-300">Supabase Backend Status:</span>
-                  <div className="flex items-center gap-1.5">
-                    {supabaseStatus === 'connected' ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                        Connected & Realtime Active
-                      </span>
-                    ) : supabaseStatus === 'connecting' ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/40">
-                        <RefreshCw className="w-3 h-3 animate-spin" />
-                        Connecting...
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                        Local Storage Fallback
-                      </span>
-                    )}
+              <div
+                className={`p-4 rounded-xl border flex items-start gap-3 ${
+                  supabaseStatus === 'connected'
+                    ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300'
+                    : 'bg-amber-950/30 border-amber-500/30 text-amber-300'
+                }`}
+              >
+                {supabaseStatus === 'connected' ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                )}
+                <div className="space-y-1">
+                  <div className="font-bold text-sm">
+                    {supabaseStatus === 'connected'
+                      ? 'Supabase PostgreSQL Cloud: Connected & Broadcasting Live'
+                      : 'Connecting to Supabase Database...'}
                   </div>
+                  <p className="text-xs opacity-90 leading-relaxed">
+                    {supabaseStatus === 'connected'
+                      ? 'All athlete weigh-ins, category divisions, knockout brackets, and Leitai scoring cards are synchronized in real time to your cloud database.'
+                      : 'Testing credentials and initializing connection to the PostgreSQL database.'}
+                  </p>
                 </div>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Enter your Supabase project details from{' '}
-                  <a
-                    href="https://supabase.com/dashboard"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-emerald-400 hover:text-emerald-300 underline inline-flex items-center gap-0.5"
-                  >
-                    supabase.com/dashboard <ExternalLink className="w-3 h-3" />
-                  </a>
-                  . Project Settings &gt; API &gt; Project URL and anon public key.
-                </p>
               </div>
 
-              <form onSubmit={handleTestAndSave} className="space-y-3.5">
-                <div>
-                  <label className="block text-slate-300 mb-1 font-semibold flex items-center gap-1.5">
-                    <Globe className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Supabase Project URL</span>
-                  </label>
-                  <input
-                    type="url"
-                    placeholder="https://xyzabcdefghijklmnop.supabase.co"
-                    value={url}
-                    onChange={e => setUrl(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-mono"
-                  />
-                  <span className="text-[10px] text-slate-500 mt-1 block">
-                    Found in Supabase Project Settings &rarr; API &rarr; Project URL
-                  </span>
-                </div>
-
-                <div>
-                  <label className="block text-slate-300 mb-1 font-semibold flex items-center gap-1.5">
-                    <Key className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Anon / Public API Key</span>
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                    value={anonKey}
-                    onChange={e => setAnonKey(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-mono"
-                  />
-                  <span className="text-[10px] text-slate-500 mt-1 block">
-                    Safe to use in frontend. Found under Project Settings &rarr; API &rarr; Project API keys &rarr; anon / public.
-                  </span>
-                </div>
-
-                <div className="pt-2 flex flex-wrap items-center gap-2.5 justify-between">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="submit"
-                      disabled={testing}
-                      className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-2 shadow-md shadow-emerald-500/20 transition-all cursor-pointer disabled:opacity-50"
-                    >
-                      {testing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
-                      <span>{testing ? 'Testing Connection...' : 'Save & Connect to Supabase'}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleTestAndSave()}
-                      disabled={testing}
-                      className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-xl text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      <RefreshCw className={`w-3 h-3 ${testing ? 'animate-spin' : ''}`} />
-                      <span>Test Connection</span>
-                    </button>
+              {/* Endpoint cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
+                  <div className="flex items-center gap-1.5 text-slate-400 text-[11px] font-semibold">
+                    <Globe className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Project URL</span>
                   </div>
-
-                  {(url || anonKey) && (
-                    <button
-                      type="button"
-                      onClick={handleClear}
-                      className="px-3 py-2 text-rose-400 hover:bg-rose-950/40 rounded-xl text-xs flex items-center gap-1.5 border border-transparent hover:border-rose-900/50 transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Disconnect</span>
-                    </button>
-                  )}
+                  <div className="font-mono text-xs text-slate-200 truncate font-semibold" title={url}>
+                    {url || 'Not configured'}
+                  </div>
                 </div>
-              </form>
+
+                <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
+                  <div className="flex items-center gap-1.5 text-slate-400 text-[11px] font-semibold">
+                    <Server className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Realtime WebSocket</span>
+                  </div>
+                  <div className="text-xs text-slate-200 font-semibold flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span>PostgreSQL Realtime Broadcast Active</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Live counts */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
+                <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl text-center">
+                  <span className="text-[10px] text-slate-400 block font-semibold">Athletes</span>
+                  <span className="text-lg font-bold text-white font-mono-tabular">{players.length}</span>
+                </div>
+                <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl text-center">
+                  <span className="text-[10px] text-slate-400 block font-semibold">Categories</span>
+                  <span className="text-lg font-bold text-white font-mono-tabular">{categories.length}</span>
+                </div>
+                <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl text-center">
+                  <span className="text-[10px] text-slate-400 block font-semibold">Brackets</span>
+                  <span className="text-lg font-bold text-white font-mono-tabular">{brackets.length}</span>
+                </div>
+                <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl text-center">
+                  <span className="text-[10px] text-slate-400 block font-semibold">Events</span>
+                  <span className="text-lg font-bold text-white font-mono-tabular">{events.length}</span>
+                </div>
+              </div>
             </div>
           )}
 
-          {/* TAB 2: Data Sync & Migration */}
+          {/* TAB 2: Sync */}
           {activeTab === 'sync' && (
             <div className="space-y-4">
-              <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl">
-                <h4 className="font-semibold text-slate-200 mb-2 flex items-center gap-2">
-                  <Database className="w-4 h-4 text-emerald-400" />
-                  <span>Current Tournament Local Records:</span>
-                </h4>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
-                  <div className="p-2 bg-slate-900 rounded-lg border border-slate-800">
-                    <span className="text-base font-bold text-emerald-400 font-mono-tabular">{events.length}</span>
-                    <span className="text-[10px] text-slate-400 block">Events</span>
-                  </div>
-                  <div className="p-2 bg-slate-900 rounded-lg border border-slate-800">
-                    <span className="text-base font-bold text-amber-400 font-mono-tabular">{players.length}</span>
-                    <span className="text-[10px] text-slate-400 block">Athletes</span>
-                  </div>
-                  <div className="p-2 bg-slate-900 rounded-lg border border-slate-800">
-                    <span className="text-base font-bold text-sky-400 font-mono-tabular">{categories.length}</span>
-                    <span className="text-[10px] text-slate-400 block">Divisions</span>
-                  </div>
-                  <div className="p-2 bg-slate-900 rounded-lg border border-slate-800">
-                    <span className="text-base font-bold text-purple-400 font-mono-tabular">{brackets.length}</span>
-                    <span className="text-[10px] text-slate-400 block">Brackets</span>
-                  </div>
-                </div>
-              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Manually push or pull entire championship records between your browser and the Supabase PostgreSQL database.
+              </p>
 
-              <div className="space-y-3">
-                <div className="p-3.5 bg-slate-950/60 border border-slate-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <h5 className="font-bold text-white text-xs flex items-center gap-1.5">
-                      <UploadCloud className="w-4 h-4 text-emerald-400" />
-                      <span>Push Local Data to Supabase</span>
-                    </h5>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      Upload and seed all your local events, athletes, categories, brackets, and users to Supabase tables.
-                    </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  onClick={handlePushData}
+                  disabled={syncing}
+                  className="p-4 bg-slate-950 hover:bg-slate-800/80 border border-slate-800 hover:border-emerald-500/40 rounded-xl text-left transition-all cursor-pointer flex items-center gap-3.5"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                    <UploadCloud className="w-5 h-5" />
                   </div>
-                  <button
-                    onClick={handlePushData}
-                    disabled={syncing || supabaseStatus !== 'connected'}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shrink-0 shadow-md shadow-emerald-600/20"
-                  >
-                    {syncing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5" />}
-                    <span>Push to Supabase</span>
-                  </button>
-                </div>
+                  <div>
+                    <div className="text-xs font-bold text-white">Push All to Supabase</div>
+                    <div className="text-[11px] text-slate-400">Upload all athletes, categories & brackets</div>
+                  </div>
+                </button>
 
-                <div className="p-3.5 bg-slate-950/60 border border-slate-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <h5 className="font-bold text-white text-xs flex items-center gap-1.5">
-                      <DownloadCloud className="w-4 h-4 text-sky-400" />
-                      <span>Pull Remote Data from Supabase</span>
-                    </h5>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      Download the latest tournament records stored in your Supabase database into this client.
-                    </p>
+                <button
+                  onClick={handlePullData}
+                  disabled={syncing}
+                  className="p-4 bg-slate-950 hover:bg-slate-800/80 border border-slate-800 hover:border-amber-500/40 rounded-xl text-left transition-all cursor-pointer flex items-center gap-3.5"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                    <DownloadCloud className="w-5 h-5" />
                   </div>
-                  <button
-                    onClick={handlePullData}
-                    disabled={syncing || supabaseStatus !== 'connected'}
-                    className="px-4 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shrink-0 shadow-md shadow-sky-600/20"
-                  >
-                    {syncing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <DownloadCloud className="w-3.5 h-3.5" />}
-                    <span>Pull from Supabase</span>
-                  </button>
-                </div>
+                  <div>
+                    <div className="text-xs font-bold text-white">Pull From Supabase</div>
+                    <div className="text-[11px] text-slate-400">Download latest cloud records</div>
+                  </div>
+                </button>
               </div>
             </div>
           )}
 
-          {/* TAB 3: 1-Click RLS Fix */}
-          {activeTab === 'rls-fix' && (
-            <div className="space-y-3">
-              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-start gap-3">
-                <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <h4 className="font-bold text-amber-300 text-xs">
-                    Fix &quot;new row violates row-level security policy&quot; Error
-                  </h4>
-                  <p className="text-[11px] text-slate-300 leading-relaxed">
-                    If Supabase gives an RLS error when adding players or scoring bouts, copy and run this quick SQL in your{' '}
-                    <a
-                      href="https://supabase.com/dashboard"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-amber-400 underline font-semibold inline-flex items-center gap-0.5"
-                    >
-                      Supabase SQL Editor <ExternalLink className="w-3 h-3" />
-                    </a>{' '}
-                    to enable instant read/write permissions for all tournament tables.
-                  </p>
-                </div>
+          {/* TAB 3: Credentials */}
+          {activeTab === 'credentials' && (
+            <form onSubmit={handleTestAndSave} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-300">Supabase Project URL</label>
+                <input
+                  type="url"
+                  value={url}
+                  onChange={e => setUrl(e.target.value)}
+                  placeholder="https://xyzcompany.supabase.co"
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
+                  required
+                />
               </div>
 
-              <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl flex items-center justify-between">
-                <div>
-                  <h4 className="font-semibold text-slate-200">Quick RLS & Permissions SQL Script</h4>
-                  <p className="text-[10px] text-slate-400">
-                    Grants permissions and creates open policies for real-time live sync
-                  </p>
-                </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-300">Supabase Anon Public API Key</label>
+                <textarea
+                  value={anonKey}
+                  onChange={e => setAnonKey(e.target.value)}
+                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
+                  rows={3}
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500 font-mono resize-none"
+                  required
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 pt-2">
                 <button
-                  onClick={copyRlsFixToClipboard}
-                  className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 cursor-pointer transition-colors shrink-0 shadow-md shadow-amber-500/20"
+                  type="submit"
+                  disabled={testing}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-md shadow-emerald-500/20"
                 >
-                  {copiedRls ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedRls ? 'Copied RLS Script!' : 'Copy RLS Fix SQL'}</span>
+                  <RefreshCw className={`w-3.5 h-3.5 ${testing ? 'animate-spin' : ''}`} />
+                  <span>{testing ? 'Verifying...' : 'Save & Test Connection'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUrl('https://qbxlyaynqshlgzaqyriv.supabase.co');
+                    setAnonKey(
+                      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFieGx5YXlucXNobGd6YXF5cml2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE4MTE0NTEsImV4cCI6MjEwNzM4NzQ1MX0.rAbr9pX3SoIcLjvwXs3_XpjUMxjRQ4H1UoJPLfbspGE'
+                    );
+                    saveSupabaseConfig(
+                      'https://qbxlyaynqshlgzaqyriv.supabase.co',
+                      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFieGx5YXlucXNobGd6YXF5cml2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE4MTE0NTEsImV4cCI6MjEwNzM4NzQ1MX0.rAbr9pX3SoIcLjvwXs3_XpjUMxjRQ4H1UoJPLfbspGE'
+                    );
+                    testSupabaseConnection().then(res => {
+                      if (res.success) {
+                        setSupabaseStatus('connected');
+                      }
+                      setStatusMessage({
+                        type: res.success ? 'success' : 'error',
+                        text: res.message,
+                        latency: res.latencyMs,
+                      });
+                    });
+                  }}
+                  className="px-3 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs flex items-center gap-1.5 transition-colors cursor-pointer font-semibold"
+                >
+                  <Zap className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Reset to Active Project (qbxlyayn...)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  className="px-3 py-2 bg-slate-950 hover:bg-rose-950/40 text-slate-400 hover:text-rose-300 border border-slate-800 rounded-xl text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Clear</span>
                 </button>
               </div>
-
-              <div className="relative">
-                <pre className="p-3 bg-slate-950 border border-slate-800 rounded-xl text-[10px] font-mono text-amber-300 max-h-[220px] overflow-y-auto leading-relaxed">
-                  {SUPABASE_RLS_QUICK_FIX}
-                </pre>
-              </div>
-            </div>
+            </form>
           )}
 
-          {/* TAB 4: Full SQL Schema */}
-          {activeTab === 'sql' && (
-            <div className="space-y-3">
-              <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl flex items-center justify-between">
-                <div>
-                  <h4 className="font-semibold text-slate-200">Full Supabase SQL Schema (PostgreSQL)</h4>
-                  <p className="text-[11px] text-slate-400">
-                    Complete script to create all 8 tables, indexes, realtime publications, and RLS policies
-                  </p>
-                </div>
-                <button
-                  onClick={copySqlToClipboard}
-                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 cursor-pointer transition-colors shrink-0 shadow-md shadow-emerald-500/20"
-                >
-                  {copiedSql ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedSql ? 'Copied to Clipboard!' : 'Copy Full SQL Script'}</span>
-                </button>
-              </div>
-
-              <div className="relative">
-                <pre className="p-3 bg-slate-950 border border-slate-800 rounded-xl text-[10px] font-mono text-emerald-300 max-h-[300px] overflow-y-auto leading-relaxed">
-                  {SUPABASE_SQL_SCHEMA}
-                </pre>
+          {statusMessage && (
+            <div
+              className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 ${
+                statusMessage.type === 'success'
+                  ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200'
+                  : statusMessage.type === 'error'
+                  ? 'bg-rose-950/30 border-rose-500/40 text-rose-200'
+                  : 'bg-slate-950 border-slate-800 text-slate-300'
+              }`}
+            >
+              {statusMessage.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              ) : statusMessage.type === 'error' ? (
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+              ) : (
+                <Radio className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              )}
+              <div className="space-y-0.5">
+                <div>{statusMessage.text}</div>
+                {statusMessage.latency && (
+                  <div className="font-mono text-[10px] opacity-75">Response time: {statusMessage.latency}ms</div>
+                )}
               </div>
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 shrink-0">
+        <div className="px-6 py-3 border-t border-slate-800 bg-slate-950/80 flex items-center justify-between text-xs text-slate-400 shrink-0">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            <span>Supabase Cloud PostgreSQL & Realtime Ready</span>
+            <span
+              className={`w-2 h-2 rounded-full ${
+                supabaseStatus === 'connected' ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+              }`}
+            ></span>
+            <span>{supabaseStatus === 'connected' ? 'Supabase Live Sync Connected' : 'Supabase Sync Pending'}</span>
           </div>
           <button
             onClick={onClose}

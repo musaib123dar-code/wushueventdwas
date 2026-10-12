@@ -1,6 +1,6 @@
 {
-  "summary":  "Comprehensive plan for platform-scoped bout assignments and side-scorer score consensus isolation:\n- Admin bulk & individual bout-to-platform assignment in Bracket Viewer & Admin Panel\n- Strict platform filtering for Mat Officials in LiveScoringArena (only assigned platform bouts visible)\n- Strict platform filtering for Side Scorers in SidelineJudgeScoringPanel\n- Live submitted judges scorecards comparison panel embedded directly on the platform Mat Official console\n- Strict role and platform isolation ensuring only the platform's Mat Official and Admins can view submitted scores",
-  "updatedAt":  "2026-10-11T14:40:45.749512428Z",
-  "requestFeedback":  true,
-  "userFacing":  true
+  "summary": "Comprehensive step-by-step plan for provisioning and linking a new Supabase database project for the tournament app, including project creation, SQL schema migration, in-app credential configuration, and live synchronization.",
+  "updatedAt": "2026-10-12T14:56:12.493889693Z",
+  "requestFeedback": true,
+  "userFacing": true
 }
