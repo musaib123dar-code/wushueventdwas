@@ -52,16 +52,16 @@ export const UserRoleManager: React.FC = () => {
   const [revealedPasswordId, setRevealedPasswordId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  // If not super_admin, block UI
-  if (role !== 'super_admin') {
+  // If not super_admin or admin, block UI
+  if (role !== 'super_admin' && role !== 'admin') {
     return (
       <div className="p-8 max-w-xl mx-auto bg-slate-900 border border-slate-800 rounded-2xl text-center space-y-4">
         <div className="w-12 h-12 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-400 mx-auto flex items-center justify-center">
           <Lock className="w-6 h-6" />
         </div>
-        <h2 className="text-lg font-bold text-white">Super Admin Access Required</h2>
+        <h2 className="text-lg font-bold text-white">Administrator Access Required</h2>
         <p className="text-xs text-slate-400">
-          Only the Super Admin is authorized to register tournament administrators, mat officials, and sideline scorers.
+          Only Tournament Administrators and Super Admins are authorized to register officials and manage competition platform assignments.
         </p>
       </div>
     );
@@ -147,7 +147,7 @@ export const UserRoleManager: React.FC = () => {
             Official Account & Role Registration
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
-            Super Admin Portal: Register Tournament Administrators, Mat Officials, and Side Scorers with credentials.
+            Admin & Super Admin Portal: Register Tournament Officials & Side Scorers, and assign them to competition platform arenas.
           </p>
         </div>
 

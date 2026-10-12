@@ -59,6 +59,8 @@ export const BracketViewer: React.FC = () => {
     updateBracketFixture,
     movePlayerInFixture,
     swapPlayersInFixture,
+    assignCategoryToPlatform,
+    assignBoutToPlatform,
     setActiveBoutForScoring,
     setActiveTab,
     role,
@@ -137,6 +139,26 @@ export const BracketViewer: React.FC = () => {
   const handleLaunchScoring = (bout: Bout) => {
     setActiveBoutForScoring(bout);
     setActiveTab('live-scoring');
+  };
+
+  const handleAssignCategoryPlatform = (newPlatform: string) => {
+    if (!currentCategory) return;
+    const res = assignCategoryToPlatform(currentCategory.id, newPlatform);
+    if (res.success) {
+      showSuccessFeedback(`All bouts in "${currentCategory.name}" assigned to ${newPlatform}`);
+    } else {
+      setErrorMessage(res.error || 'Failed to assign category to platform.');
+    }
+  };
+
+  const handleAssignBoutPlatform = (bout: Bout, newPlatform: string) => {
+    if (!currentOriginalBracket) return;
+    const res = assignBoutToPlatform(currentOriginalBracket.id, bout.id, newPlatform);
+    if (res.success) {
+      showSuccessFeedback(`Bout ${bout.boutNumber} assigned to ${newPlatform}`);
+    } else {
+      setErrorMessage(res.error || 'Failed to route bout to platform.');
+    }
   };
 
   const handleConfirmReopen = (e: React.FormEvent) => {
@@ -1089,6 +1111,39 @@ export const BracketViewer: React.FC = () => {
             </div>
           </div>
 
+          {/* Platform Routing & Assignment Bar (Admins & Super Admins) */}
+          <div className="no-print p-3 bg-slate-900/90 border border-slate-800 rounded-xl flex flex-wrap items-center justify-between gap-3 mb-6">
+            <div className="flex items-center gap-2.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                Assigned Platform:
+              </span>
+              <span className="px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                {currentBracket.rounds[0]?.bouts[0]?.ring || event.rings[0] || 'Leitai 1 (Platform A)'}
+              </span>
+            </div>
+
+            {/* Quick Batch Assign to Platform for Admins */}
+            {canEdit && !isEditMode && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400 font-medium">
+                  Assign Category to:
+                </span>
+                <select
+                  value={currentBracket.rounds[0]?.bouts[0]?.ring || event.rings[0] || ''}
+                  onChange={e => handleAssignCategoryPlatform(e.target.value)}
+                  className="bg-slate-950 border border-slate-700 hover:border-amber-500 rounded-lg px-3 py-1.5 text-xs text-amber-300 font-semibold focus:outline-none focus:border-amber-500 cursor-pointer transition-colors shadow-sm"
+                >
+                  {event.rings.map(r => (
+                    <option key={r} value={r}>
+                      {r} (All Bouts)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
           {/* Bracket Tree Columns */}
           <div className="flex items-stretch gap-10 min-w-[960px] pb-6">
             {currentBracket.rounds.map((round, rIndex) => {
@@ -1158,9 +1213,28 @@ export const BracketViewer: React.FC = () => {
                                   LIVE
                                 </span>
                               )}
-                              <span className="text-slate-400 font-mono-tabular text-[10px]">
-                                {bout.ring.split(' ')[0]}
-                              </span>
+                              {canEdit && !isEditMode && !bout.resultLocked && !bout.isBye ? (
+                                <select
+                                  value={bout.ring}
+                                  onClick={e => e.stopPropagation()}
+                                  onChange={e => {
+                                    e.stopPropagation();
+                                    handleAssignBoutPlatform(bout, e.target.value);
+                                  }}
+                                  title="Admin: Reassign this bout to a platform"
+                                  className="text-[10px] font-mono-tabular bg-slate-950 border border-slate-700 hover:border-amber-500 rounded px-1.5 py-0.5 text-amber-300 focus:outline-none cursor-pointer transition-colors"
+                                >
+                                  {event.rings.map(r => (
+                                    <option key={r} value={r}>
+                                      {r.includes('Platform') ? r.split(' ')[0] + ' (' + (r.match(/Platform [A-Z]/i)?.[0] || '') + ')' : r.split(' ')[0]}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <span className="text-slate-400 font-mono-tabular text-[10px] px-1 py-0.2 rounded bg-slate-950/60 border border-slate-800">
+                                  {bout.ring.split(' ')[0]}
+                                </span>
+                              )}
                             </div>
                           </div>
 
@@ -1498,7 +1572,21 @@ export const BracketViewer: React.FC = () => {
                                 {b.blueClub && <div className="text-[10px] text-slate-400">{b.blueClub}</div>}
                               </td>
                               <td className="py-2.5 px-3 text-slate-400 font-mono-tabular">
-                                {b.ring}
+                                {canEdit && !isEditMode && !b.resultLocked && !b.isBye ? (
+                                  <select
+                                    value={b.ring}
+                                    onChange={e => handleAssignBoutPlatform(b, e.target.value)}
+                                    className="bg-slate-950 border border-slate-700 hover:border-amber-500 rounded px-2 py-1 text-xs text-amber-300 font-semibold focus:outline-none cursor-pointer"
+                                  >
+                                    {event.rings.map(r => (
+                                      <option key={r} value={r}>
+                                        {r}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <span>{b.ring}</span>
+                                )}
                               </td>
                               <td className="py-2.5 px-3 text-slate-400 font-mono-tabular">
                                 {b.scheduledTime || 'TBD'}

@@ -70,11 +70,11 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
     { id: 'dashboard', label: 'Dashboard Overview', icon: <LayoutDashboard className="w-4 h-4" />, allowedRoles: ['super_admin', 'admin', 'official', 'general_view'] },
     { id: 'players', label: 'Player Registry', icon: <Users className="w-4 h-4" />, badge: `${players.length}`, allowedRoles: ['super_admin', 'admin', 'official', 'general_view'] },
     { id: 'master-panel', label: 'Master Admin Panel', icon: <Crown className="w-4 h-4 text-amber-400" />, badge: 'Master', badgeColor: 'bg-amber-500/20 text-amber-300 border border-amber-500/40', allowedRoles: ['super_admin'] },
-    { id: 'live-scoring', label: 'Official Leitai Scoring', icon: <Swords className="w-4 h-4" />, badge: liveBoutCount > 0 ? `${liveBoutCount} Live` : undefined, badgeColor: 'bg-red-500/20 text-red-400 border border-red-800/60', allowedRoles: ['super_admin', 'admin', 'official'] },
+    { id: 'live-scoring', label: 'Official Leitai Scoring', icon: <Swords className="w-4 h-4" />, badge: liveBoutCount > 0 ? `${liveBoutCount} Live` : undefined, badgeColor: 'bg-red-500/20 text-red-400 border border-red-800/60', allowedRoles: ['super_admin', 'admin', 'official', 'sideline_judge'] },
     { id: 'categories', label: 'Category Divisions', icon: <Filter className="w-4 h-4" />, badge: `${categories.length}`, allowedRoles: ['super_admin', 'admin', 'official'] },
     { id: 'events', label: 'Tournament Setup', icon: <CalendarDays className="w-4 h-4" />, allowedRoles: ['super_admin', 'admin'] },
     { id: 'audit', label: 'System Audit Logs', icon: <History className="w-4 h-4" />, allowedRoles: ['super_admin', 'admin'] },
-    { id: 'users', label: 'Register Staff & Officials', icon: <ShieldCheck className="w-4 h-4" />, allowedRoles: ['super_admin'] },
+    { id: 'users', label: 'Staff & Platform Assignments', icon: <ShieldCheck className="w-4 h-4" />, allowedRoles: ['super_admin', 'admin'] },
     { id: 'exports', label: 'Reports & Export', icon: <FileSpreadsheet className="w-4 h-4" />, allowedRoles: ['super_admin', 'admin', 'official'] },
     { id: 'about', label: 'About Us', icon: <Info className="w-4 h-4 text-amber-400" />, allowedRoles: ['super_admin', 'admin', 'official', 'general_view'] },
   ];

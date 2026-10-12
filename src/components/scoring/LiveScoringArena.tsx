@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import { SidelineJudgeScoringPanel } from './SidelineJudgeScoringPanel';
 import { AdminJudgeConsensusModal } from './AdminJudgeConsensusModal';
+import { MatOfficialJudgesComparison } from './MatOfficialJudgesComparison';
+import { isArenaMatch } from '../../utils/arenaMatcher';
 
 export const LiveScoringArena: React.FC = () => {
   const {
@@ -44,17 +46,31 @@ export const LiveScoringArena: React.FC = () => {
     setActiveTab,
   } = useTournament();
 
-  // Find all available non-bye bouts for selection
+  // User's assigned platform
+  const isSuperOrAdmin = role === 'super_admin' || role === 'admin';
+  const assignedPlatform = currentUser.assignedRing || currentUser.ringAssignment || '';
+
+  // Find all available non-bye bouts for selection, strictly filtered for Mat Officials
   const allBouts: { bout: Bout; categoryName: string }[] = [];
   brackets.forEach(b => {
     const cat = categories.find(c => c.id === b.categoryId);
     b.rounds.forEach(r => {
       r.bouts.forEach(bout => {
         if (!bout.isBye && bout.redPlayerId && bout.bluePlayerId) {
-          allBouts.push({
-            bout,
-            categoryName: cat?.name || 'Sanda Division',
-          });
+          // If Mat Official: strictly only bouts matching their assigned platform!
+          if (role === 'official') {
+            if (assignedPlatform && isArenaMatch(assignedPlatform, bout.ring)) {
+              allBouts.push({
+                bout,
+                categoryName: cat?.name || 'Sanda Division',
+              });
+            }
+          } else {
+            allBouts.push({
+              bout,
+              categoryName: cat?.name || 'Sanda Division',
+            });
+          }
         }
       });
     });
@@ -68,12 +84,19 @@ export const LiveScoringArena: React.FC = () => {
   // Sync when activeBoutForScoring changes from outside
   useEffect(() => {
     if (activeBoutForScoring) {
-      setSelectedBoutId(activeBoutForScoring.id);
+      // If official, ensure active bout matches their platform
+      if (role === 'official') {
+        if (assignedPlatform && isArenaMatch(assignedPlatform, activeBoutForScoring.ring)) {
+          setSelectedBoutId(activeBoutForScoring.id);
+        }
+      } else {
+        setSelectedBoutId(activeBoutForScoring.id);
+      }
     }
-  }, [activeBoutForScoring]);
+  }, [activeBoutForScoring, role, assignedPlatform]);
 
   const currentBoutEntry = allBouts.find(b => b.bout.id === selectedBoutId);
-  const bout = currentBoutEntry?.bout || activeBoutForScoring;
+  const bout = currentBoutEntry?.bout || (role === 'official' ? allBouts[0]?.bout : activeBoutForScoring);
   const categoryName = currentBoutEntry?.categoryName || 'Sanda Championship';
 
   // Round management
@@ -93,10 +116,10 @@ export const LiveScoringArena: React.FC = () => {
   const [reopenReasonText, setReopenReasonText] = useState<string>('');
 
   // Sideline Judge scoring mode & admin consensus review modal
+  // Mat Official (role === 'official') runs the Official Mat Console
+  // Side Scorer (role === 'sideline_judge') runs the Sideline Judge Scoring Panel
   const [scoringMode, setScoringMode] = useState<'official_table' | 'sideline_judge'>(
-    currentUser.role === 'official' || currentUser.role === 'sideline_judge'
-      ? 'sideline_judge'
-      : 'official_table'
+    currentUser.role === 'sideline_judge' ? 'sideline_judge' : 'official_table'
   );
   const [isConsensusModalOpen, setIsConsensusModalOpen] = useState<boolean>(false);
 
@@ -233,65 +256,131 @@ export const LiveScoringArena: React.FC = () => {
     });
   }
 
+  // Guard for Mat Official with no assigned platform
+  if (role === 'official' && (!assignedPlatform || !assignedPlatform.trim())) {
+    return (
+      <div className="p-8 sm:p-12 max-w-2xl mx-auto bg-slate-900/95 border border-amber-500/30 rounded-2xl text-center space-y-4 shadow-2xl">
+        <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 mx-auto flex items-center justify-center">
+          <ShieldAlert className="w-7 h-7" />
+        </div>
+        <div className="inline-block px-3 py-1 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded-full text-[11px] font-bold uppercase tracking-wider">
+          Platform Assignment Required
+        </div>
+        <h2 className="text-xl font-bold text-white">No Platform Designated for Your Mat Official Account</h2>
+        <p className="text-xs sm:text-sm text-slate-300 max-w-lg mx-auto leading-relaxed">
+          Official account <strong>{currentUser.name}</strong> is not currently assigned to any competition platform (e.g. Platform A or Platform B).
+        </p>
+        <div className="p-4 bg-slate-950/80 rounded-xl border border-slate-800 text-xs text-slate-400 max-w-md mx-auto text-left space-y-2">
+          <div className="font-semibold text-slate-200">Required Action:</div>
+          <p>
+            Please ask the Tournament Administrator to assign your official account to <strong>Platform A</strong> or <strong>Platform B</strong> in the Staff & Officials directory before scoring can commence.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // If user is a sideline judge, render the sideline judge panel directly
+  if (role === 'sideline_judge') {
+    return (
+      <div className="space-y-6 pb-16">
+        <SidelineJudgeScoringPanel />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 pb-16">
       {/* Top Leitai Scoring Mode Switcher */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-2.5 bg-slate-900 border border-slate-800 rounded-2xl shadow-md">
-        <div className="flex items-center gap-1.5 p-1 bg-slate-950 rounded-xl border border-slate-800/80 text-xs">
-          <button
-            onClick={() => setScoringMode('official_table')}
-            className={`px-4 py-2 rounded-lg font-bold transition-all flex items-center gap-2 cursor-pointer ${
-              scoringMode === 'official_table'
-                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Swords className="w-4 h-4" />
-            <span>Official Mat Console</span>
-          </button>
+      {isSuperOrAdmin ? (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-2.5 bg-slate-900 border border-slate-800 rounded-2xl shadow-md">
+          <div className="flex items-center gap-1.5 p-1 bg-slate-950 rounded-xl border border-slate-800/80 text-xs">
+            <button
+              onClick={() => setScoringMode('official_table')}
+              className={`px-4 py-2 rounded-lg font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                scoringMode === 'official_table'
+                  ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Swords className="w-4 h-4" />
+              <span>Official Mat Console</span>
+            </button>
 
-          <button
-            onClick={() => setScoringMode('sideline_judge')}
-            className={`px-4 py-2 rounded-lg font-bold transition-all flex items-center gap-2 cursor-pointer ${
-              scoringMode === 'sideline_judge'
-                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>Sideline Judge Scoring Panel</span>
-            {(currentUser.assignedRing || currentUser.ringAssignment) && (
-              <span className="hidden md:inline px-2 py-0.5 text-[10px] rounded bg-slate-900 text-amber-300 font-semibold border border-slate-800">
-                {currentUser.assignedRing || currentUser.ringAssignment}
-              </span>
-            )}
-          </button>
+            <button
+              onClick={() => setScoringMode('sideline_judge')}
+              className={`px-4 py-2 rounded-lg font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                scoringMode === 'sideline_judge'
+                  ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <span>Sideline Judge Scoring Panel</span>
+            </button>
+          </div>
+
+          {bout && (
+            <button
+              onClick={() => setIsConsensusModalOpen(true)}
+              className="px-3.5 py-2 bg-slate-950 hover:bg-slate-800 text-amber-300 hover:text-amber-200 border border-slate-800 hover:border-amber-500/50 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer shadow-sm"
+            >
+              <Users className="w-4 h-4 text-amber-400" />
+              <span>Judges Scorecards & Consensus Review</span>
+            </button>
+          )}
         </div>
+      ) : role === 'official' ? (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-900 border border-slate-800 rounded-2xl shadow-md">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
+              <Swords className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold uppercase text-white tracking-wider">
+                  Mat Official Platform Console
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                  {assignedPlatform}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Authorized exclusively for bouts scheduled on {assignedPlatform}
+              </p>
+            </div>
+          </div>
 
-        {/* Admin Consensus Review Button */}
-        {canReopen && bout && (
-          <button
-            onClick={() => setIsConsensusModalOpen(true)}
-            className="px-3.5 py-2 bg-slate-950 hover:bg-slate-800 text-amber-300 hover:text-amber-200 border border-slate-800 hover:border-amber-500/50 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer shadow-sm"
-          >
-            <Users className="w-4 h-4 text-amber-400" />
-            <span>Judges Scorecards & Consensus Review</span>
-          </button>
-        )}
-      </div>
+          {bout && (
+            <button
+              onClick={() => setIsConsensusModalOpen(true)}
+              className="px-3 py-1.5 bg-slate-950 hover:bg-slate-800 text-amber-300 hover:text-amber-200 border border-slate-800 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer shadow-sm"
+            >
+              <Users className="w-4 h-4 text-amber-400" />
+              <span>Full Consensus Audit Log</span>
+            </button>
+          )}
+        </div>
+      ) : null}
 
       {scoringMode === 'sideline_judge' ? (
         <SidelineJudgeScoringPanel onSwitchToOfficialScoring={() => setScoringMode('official_table')} />
       ) : !bout ? (
-        <div className="p-12 text-center bg-slate-900/60 border border-dashed border-slate-800 rounded-2xl">
-          <Swords className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-          <h2 className="text-base font-bold text-white mb-1">No Active Bout Selected for Scoring</h2>
-          <p className="text-xs text-slate-400 max-w-sm mx-auto mb-4">
-            Please select a scheduled fight from the brackets or upcoming queue to begin official scoring.
+        <div className="p-12 text-center bg-slate-900/60 border border-dashed border-slate-800 rounded-2xl space-y-3">
+          <Swords className="w-10 h-10 text-slate-600 mx-auto" />
+          <h2 className="text-base font-bold text-white">
+            {role === 'official'
+              ? `No Bouts Assigned to ${assignedPlatform}`
+              : 'No Active Bout Selected for Scoring'}
+          </h2>
+          <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+            {role === 'official'
+              ? `There are currently no scheduled bouts assigned to ${assignedPlatform}. The Tournament Admin can allocate individual bouts or entire category brackets to ${assignedPlatform} in Knockout Brackets.`
+              : 'Please select a scheduled fight from the brackets or upcoming queue to begin official scoring.'}
           </p>
           <button
             onClick={() => setActiveTab('brackets')}
-            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs rounded-xl"
+            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs rounded-xl cursor-pointer transition-colors"
           >
             Go to Fixture Brackets →
           </button>
@@ -687,6 +776,19 @@ export const LiveScoringArena: React.FC = () => {
             )}
           </div>
         </div>
+
+        {/* Live Platform Side Judges Comparison & Consensus Display */}
+        {bout && (
+          <MatOfficialJudgesComparison
+            bout={bout}
+            categoryName={categoryName}
+            activeRoundNumber={currentRoundNumber}
+            onAdoptConsensus={(winner, reason) => {
+              setWinnerCorner(winner);
+              setCustomReason(reason);
+            }}
+          />
+        )}
 
         {/* Finalize & Submit Result Form */}
         {canScore && !bout.resultLocked && (

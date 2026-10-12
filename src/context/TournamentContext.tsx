@@ -161,7 +161,9 @@ interface TournamentContextType {
     boutIdB: string,
     cornerB: 'red' | 'blue'
   ) => { success: boolean; error?: string; updatedBracket?: Bracket };
-  
+  assignCategoryToPlatform: (categoryId: string, platformName: string) => { success: boolean; error?: string };
+  assignBoutToPlatform: (bracketId: string, boutId: string, platformName: string) => { success: boolean; error?: string };
+
   activeBoutForScoring: Bout | null;
   setActiveBoutForScoring: (bout: Bout | null) => void;
   recordBoutScoreEvent: (boutId: string, event: Omit<ScoreEvent, 'id' | 'timestamp'>) => void;
@@ -198,6 +200,7 @@ interface TournamentContextType {
   resetSidelineRoundCard: (boutId: string, roundNumber: number) => { success: boolean; error?: string };
   getJudgeScoresForBout: (boutId: string, judgeId?: string) => SidelineJudgeScore[];
   getAllJudgeScoresForAdmin: (boutId: string) => SidelineJudgeScore[];
+  getSubmittedJudgeScoresForPlatform: (boutId: string) => SidelineJudgeScore[];
   validateJudgeAccessForBout: (bout: Bout) => { allowed: boolean; reason?: string };
   
   auditLogs: AuditLog[];
@@ -1423,6 +1426,104 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return { success: true, updatedBracket };
   };
 
+  // Tournament Admin: Assign Entire Category to a Competition Platform
+  const assignCategoryToPlatform = (
+    categoryId: string,
+    platformName: string
+  ): { success: boolean; error?: string } => {
+    if (role !== 'super_admin' && role !== 'admin') {
+      return {
+        success: false,
+        error: 'Permission denied: Only Tournament Administrators can assign categories to platforms.',
+      };
+    }
+
+    const bracket = brackets.find(b => b.categoryId === categoryId);
+    if (!bracket) {
+      return { success: false, error: 'Bracket for this category not found. Please generate the bracket first.' };
+    }
+
+    const cat = categories.find(c => c.id === categoryId);
+    const categoryName = cat?.name || 'Category';
+
+    // Update all bouts in all rounds to the chosen platform
+    const updatedRounds = bracket.rounds.map(r => ({
+      ...r,
+      bouts: r.bouts.map(bout => ({
+        ...bout,
+        ring: platformName,
+      })),
+    }));
+
+    const updatedBracket: Bracket = {
+      ...bracket,
+      rounds: updatedRounds,
+      eventId: bracket.eventId || event.id,
+    };
+
+    setBrackets(prev => prev.map(b => (b.id === bracket.id ? updatedBracket : b)));
+    supabaseUpsertBracket(updatedBracket, event.id);
+
+    addAuditLog(
+      'FIXTURE_EDIT',
+      `Category: ${categoryName}`,
+      `Tournament Admin assigned all bouts in ${categoryName} to ${platformName}. Official: ${currentUser.name}`
+    );
+
+    return { success: true };
+  };
+
+  // Tournament Admin: Assign Individual Bout to a Competition Platform
+  const assignBoutToPlatform = (
+    bracketId: string,
+    boutId: string,
+    platformName: string
+  ): { success: boolean; error?: string } => {
+    if (role !== 'super_admin' && role !== 'admin') {
+      return {
+        success: false,
+        error: 'Permission denied: Only Tournament Administrators can assign bouts to platforms.',
+      };
+    }
+
+    const bracket = brackets.find(b => b.id === bracketId);
+    if (!bracket) {
+      return { success: false, error: 'Bracket not found.' };
+    }
+
+    let targetBoutNumber = '';
+    const updatedRounds = bracket.rounds.map(r => ({
+      ...r,
+      bouts: r.bouts.map(bout => {
+        if (bout.id === boutId) {
+          targetBoutNumber = bout.boutNumber;
+          return {
+            ...bout,
+            ring: platformName,
+          };
+        }
+        return bout;
+      }),
+    }));
+
+    const updatedBracket: Bracket = {
+      ...bracket,
+      rounds: updatedRounds,
+      eventId: bracket.eventId || event.id,
+    };
+
+    setBrackets(prev => prev.map(b => (b.id === bracketId ? updatedBracket : b)));
+    supabaseUpsertBracket(updatedBracket, event.id);
+
+    addAuditLog(
+      'FIXTURE_EDIT',
+      `Bout ${targetBoutNumber || boutId}`,
+      `Tournament Admin routed Bout ${targetBoutNumber || boutId} to ${platformName}. Official: ${currentUser.name}`
+    );
+
+    return { success: true };
+  };
+
   // Live scoring actions
   const recordBoutScoreEvent = (boutId: string, scoreEvent: Omit<ScoreEvent, 'id' | 'timestamp'>) => {
     if (role === 'general_view') return;
@@ -2174,10 +2275,32 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const getJudgeScoresForBout = (boutId: string, judgeId?: string): SidelineJudgeScore[] => {
     if (!isLoggedIn) return [];
 
-    // If official or sideline judge: strictly only their own scores
-    if (role === 'official' || role === 'sideline_judge') {
+    // If sideline judge: strictly only their own scorecard
+    if (role === 'sideline_judge') {
       return sidelineJudgeScores.filter(
         s => s.boutId === boutId && s.judgeId === currentUser.id
+      );
+    }
+
+    // If mat official: strictly only submitted scores for bouts assigned to their active platform
+    if (role === 'official') {
+      const officialRing = currentUser.assignedRing || currentUser.ringAssignment;
+      if (!officialRing) return [];
+
+      let targetBout: Bout | null = null;
+      for (const b of brackets) {
+        const found = findBoutInRounds(b.rounds, boutId);
+        if (found) {
+          targetBout = found;
+          break;
+        }
+      }
+      if (!targetBout || !isArenaMatch(officialRing, targetBout.ring)) {
+        return [];
+      }
+
+      return sidelineJudgeScores.filter(
+        s => s.boutId === boutId && s.isSubmitted && isArenaMatch(officialRing, s.arena || targetBout?.ring)
       );
     }
 
@@ -2189,15 +2312,42 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   const getAllJudgeScoresForAdmin = (boutId: string): SidelineJudgeScore[] => {
-    if (role !== 'super_admin' && role !== 'admin') {
-      return [];
+    if (role === 'super_admin' || role === 'admin') {
+      return sidelineJudgeScores.filter(s => s.boutId === boutId);
     }
-    return sidelineJudgeScores.filter(s => s.boutId === boutId);
+    // Platform Mat Official: sees submitted scores exclusively for their platform
+    if (role === 'official') {
+      const officialRing = currentUser.assignedRing || currentUser.ringAssignment;
+      if (!officialRing) return [];
+      let targetBout: Bout | null = null;
+      for (const b of brackets) {
+        const found = findBoutInRounds(b.rounds, boutId);
+        if (found) {
+          targetBout = found;
+          break;
+        }
+      }
+      if (!targetBout || !isArenaMatch(officialRing, targetBout.ring)) {
+        return [];
+      }
+      return sidelineJudgeScores.filter(
+        s => s.boutId === boutId && s.isSubmitted && isArenaMatch(officialRing, s.arena || targetBout?.ring)
+      );
+    }
+    return [];
   };
 
-  // User management - Strictly restricted to Super Admin
+  const getSubmittedJudgeScoresForPlatform = (boutId: string): SidelineJudgeScore[] => {
+    return getAllJudgeScoresForAdmin(boutId).filter(s => s.isSubmitted);
+  };
+
+  // User management - Tournament Admins and Super Admins can assign platforms and register officials
   const updateUserRole = (userId: string, newRole: UserRole) => {
-    if (role !== 'super_admin') return;
+    if (role !== 'super_admin' && role !== 'admin') return;
+    const target = users.find(u => u.id === userId);
+    if (target?.role === 'super_admin' && role !== 'super_admin') return;
+    if (newRole === 'super_admin' && role !== 'super_admin') return;
+
     setUsers(prev =>
       prev.map(u => {
         if (u.id === userId) {
@@ -2212,15 +2362,15 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   const addUser = (userData: Omit<User, 'id'>): { success: boolean; error?: string; user?: User } => {
-    if (role !== 'super_admin') {
-      return { success: false, error: 'Unauthorized: Only Super Admin has permission to register tournament officials.' };
+    if (role !== 'super_admin' && role !== 'admin') {
+      return { success: false, error: 'Unauthorized: Only Tournament Admins and Super Admins have permission to register tournament officials.' };
     }
 
     // STRICT: Only Tournament Admin, Mat Official, and Sideline Scorer can be registered
     if (userData.role !== 'admin' && userData.role !== 'official' && userData.role !== 'sideline_judge') {
       return {
         success: false,
-        error: 'Registration restricted: Super Admin can only register Tournament Admin, Mat Official, or Sideline Scorer roles.',
+        error: 'Registration restricted: Only Tournament Admin, Mat Official, or Sideline Scorer roles can be registered.',
       };
     }
 
@@ -2260,15 +2410,15 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     addAuditLog(
       'CREATE',
       `Official: ${newUser.name}`,
-      `Super Admin created ${newUser.role === 'admin' ? 'Tournament Admin' : newUser.role === 'sideline_judge' ? 'Sideline Scorer' : 'Mat Official'} credentials for ${newUser.email}.`
+      `Created ${newUser.role === 'admin' ? 'Tournament Admin' : newUser.role === 'sideline_judge' ? 'Sideline Scorer' : 'Mat Official'} credentials for ${newUser.email} (${newUser.assignedRing || 'No Platform'}).`
     );
 
     return { success: true, user: newUser };
   };
 
   const deleteUser = (userId: string): { success: boolean; error?: string } => {
-    if (role !== 'super_admin') {
-      return { success: false, error: 'Unauthorized: Only Super Admin can delete users.' };
+    if (role !== 'super_admin' && role !== 'admin') {
+      return { success: false, error: 'Unauthorized: Only Tournament Admins and Super Admins can delete users.' };
     }
 
     const target = users.find(u => u.id === userId);
@@ -2291,8 +2441,17 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   const updateUser = (userId: string, data: Partial<User>): { success: boolean; error?: string } => {
-    if (role !== 'super_admin') {
-      return { success: false, error: 'Unauthorized: Only Super Admin can modify official accounts.' };
+    if (role !== 'super_admin' && role !== 'admin') {
+      return { success: false, error: 'Unauthorized: Only Tournament Admins and Super Admins can modify official accounts.' };
+    }
+
+    const target = users.find(u => u.id === userId);
+    if (target?.role === 'super_admin' && role !== 'super_admin') {
+      return { success: false, error: 'Cannot modify Super Admin accounts.' };
+    }
+
+    if (data.role === 'super_admin' && role !== 'super_admin') {
+      return { success: false, error: 'Unauthorized to grant Super Admin privileges.' };
     }
 
     setUsers(prev =>
@@ -2728,6 +2887,8 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         updateBracketFixture,
         movePlayerInFixture,
         swapPlayersInFixture,
+        assignCategoryToPlatform,
+        assignBoutToPlatform,
         activeBoutForScoring,
         setActiveBoutForScoring,
         recordBoutScoreEvent,
@@ -2746,6 +2907,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         resetSidelineRoundCard,
         getJudgeScoresForBout,
         getAllJudgeScoresForAdmin,
+        getSubmittedJudgeScoresForPlatform,
         validateJudgeAccessForBout,
         auditLogs,
         addAuditLog,

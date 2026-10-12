@@ -1,6 +1,6 @@
 {
-  "summary":  "Architecture and implementation plan to transition the Wushu Tournament EMS to a pure cloud-authoritative architecture powered by Supabase PostgreSQL, eliminating persistent local browser caching while strictly isolating athletes, categories, brackets, and scorecards per tournament event ID.",
-  "updatedAt":  "2026-10-11T09:24:13.685211527Z",
+  "summary":  "Comprehensive plan for platform-scoped bout assignments and side-scorer score consensus isolation:\n- Admin bulk & individual bout-to-platform assignment in Bracket Viewer & Admin Panel\n- Strict platform filtering for Mat Officials in LiveScoringArena (only assigned platform bouts visible)\n- Strict platform filtering for Side Scorers in SidelineJudgeScoringPanel\n- Live submitted judges scorecards comparison panel embedded directly on the platform Mat Official console\n- Strict role and platform isolation ensuring only the platform's Mat Official and Admins can view submitted scores",
+  "updatedAt":  "2026-10-11T14:40:45.749512428Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

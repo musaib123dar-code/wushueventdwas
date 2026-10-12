@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useTournament } from '../../context/TournamentContext';
 import { Bout, SidelineJudgeScore } from '../../types/tournament';
+import { isArenaMatch } from '../../utils/arenaMatcher';
 import {
   ShieldCheck,
   X,
@@ -25,12 +26,16 @@ export const AdminJudgeConsensusModal: React.FC<AdminJudgeConsensusModalProps> =
   categoryName = 'Sanda Division',
   onClose,
 }) => {
-  const { getAllJudgeScoresForAdmin, users, role } = useTournament();
+  const { getAllJudgeScoresForAdmin, users, role, currentUser } = useTournament();
 
   const [selectedRound, setSelectedRound] = useState<number>(1);
 
-  // Check role authorization
-  if (role !== 'super_admin' && role !== 'admin') {
+  // Check role authorization: Super Admin, Admin, or the Mat Official assigned to this bout's platform
+  const isPlatformOfficial =
+    role === 'official' &&
+    isArenaMatch(currentUser.assignedRing || currentUser.ringAssignment, bout.ring);
+
+  if (role !== 'super_admin' && role !== 'admin' && !isPlatformOfficial) {
     return (
       <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
         <div className="bg-slate-900 border border-rose-800 rounded-2xl max-w-md w-full p-6 text-center space-y-4">
