@@ -225,19 +225,21 @@ export const PlayerRegistry: React.FC = () => {
             }}
           />
 
-          <button
-            onClick={exportTournamentBackupJson}
-            className="px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-lg border border-slate-800 transition-colors flex items-center gap-1.5"
-            title="Download full tournament safety backup as JSON file"
-          >
-            <Download className="w-3.5 h-3.5 text-amber-400" />
-            <span>Backup JSON</span>
-          </button>
+          {canEdit && (
+            <button
+              onClick={exportTournamentBackupJson}
+              className="px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-lg border border-slate-800 transition-colors flex items-center gap-1.5 cursor-pointer"
+              title="Download full tournament safety backup as JSON file"
+            >
+              <Download className="w-3.5 h-3.5 text-amber-400" />
+              <span>Backup JSON</span>
+            </button>
+          )}
 
           {canEdit && (
             <button
               onClick={() => jsonFileInputRef.current?.click()}
-              className="px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-lg border border-slate-800 transition-colors flex items-center gap-1.5"
+              className="px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-lg border border-slate-800 transition-colors flex items-center gap-1.5 cursor-pointer"
               title="Restore tournament from a downloaded JSON backup file"
             >
               <Upload className="w-3.5 h-3.5 text-sky-400" />
@@ -251,7 +253,7 @@ export const PlayerRegistry: React.FC = () => {
                 const res = restoreFromSafetySnapshot();
                 setFeedback({ type: res.success ? 'success' : 'error', message: res.message });
               }}
-              className="px-3 py-2 text-xs font-semibold text-amber-300 hover:text-white bg-amber-950/40 hover:bg-amber-900/50 rounded-lg border border-amber-600/50 transition-colors flex items-center gap-1.5 shadow-sm"
+              className="px-3 py-2 text-xs font-semibold text-amber-300 hover:text-white bg-amber-950/40 hover:bg-amber-900/50 rounded-lg border border-amber-600/50 transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
               title={`Restore state from automatic snapshot (${snapshotInfo.playersCount} athletes)`}
             >
               <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
@@ -259,14 +261,16 @@ export const PlayerRegistry: React.FC = () => {
             </button>
           )}
 
-          <button
-            onClick={() => exportDataAsCSV('players')}
-            className="px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-lg border border-slate-800 transition-colors flex items-center gap-1.5"
-            title="Export player records as CSV file"
-          >
-            <Download className="w-3.5 h-3.5 text-slate-400" />
-            <span>Export CSV</span>
-          </button>
+          {canEdit && (
+            <button
+              onClick={() => exportDataAsCSV('players')}
+              className="px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-lg border border-slate-800 transition-colors flex items-center gap-1.5 cursor-pointer"
+              title="Export player records as CSV file"
+            >
+              <Download className="w-3.5 h-3.5 text-slate-400" />
+              <span>Export CSV</span>
+            </button>
+          )}
 
           {canEdit && (
             <>

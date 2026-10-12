@@ -757,8 +757,8 @@ export const BracketViewer: React.FC = () => {
             </div>
           )}
 
-          {/* Download Tree Dropdown (All Official Formats) */}
-          {currentOriginalBracket && !isEditMode && (
+          {/* Download Tree Dropdown (All Official Formats) - Hidden for Public Spectator */}
+          {currentOriginalBracket && !isEditMode && role !== 'general_view' && (
             <div className="relative">
               <button
                 type="button"
@@ -969,36 +969,40 @@ export const BracketViewer: React.FC = () => {
                   )}
                 </button>
 
-                <button
-                  type="button"
-                  onClick={handleDownloadPlainText}
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
-                  title="Download .txt diagram file"
-                >
-                  <FileCode className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Download .txt</span>
-                </button>
+                {role !== 'general_view' && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleDownloadPlainText}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
+                      title="Download .txt diagram file"
+                    >
+                      <FileCode className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Download .txt</span>
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={handleDownloadTraditionalPdf}
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
-                  title="Download vector line-tree PDF sheet"
-                >
-                  <Download className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Download PDF</span>
-                </button>
+                    <button
+                      type="button"
+                      onClick={handleDownloadTraditionalPdf}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
+                      title="Download vector line-tree PDF sheet"
+                    >
+                      <Download className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Download PDF</span>
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={handleDownloadFullReport}
-                  disabled={exportLoading !== false}
-                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
-                  title="Download complete multi-page tournament booklet"
-                >
-                  <FileText className="w-3.5 h-3.5 text-slate-950" />
-                  <span>Full Report PDF</span>
-                </button>
+                    <button
+                      type="button"
+                      onClick={handleDownloadFullReport}
+                      disabled={exportLoading !== false}
+                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                      title="Download complete multi-page tournament booklet"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-slate-950" />
+                      <span>Full Report PDF</span>
+                    </button>
+                  </>
+                )}
 
                 <button
                   type="button"
@@ -1477,36 +1481,40 @@ export const BracketViewer: React.FC = () => {
               </div>
 
               <div className="no-print flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleDownloadTraditionalPdf}
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
-                  title="Download vector line-tree PDF sheet"
-                >
-                  <Download className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Line Tree PDF</span>
-                </button>
+                {role !== 'general_view' && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleDownloadTraditionalPdf}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
+                      title="Download vector line-tree PDF sheet"
+                    >
+                      <Download className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Line Tree PDF</span>
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={handleDownloadPlainText}
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
-                  title="Download .txt tree diagram"
-                >
-                  <FileCode className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Plain Text .txt</span>
-                </button>
+                    <button
+                      type="button"
+                      onClick={handleDownloadPlainText}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
+                      title="Download .txt tree diagram"
+                    >
+                      <FileCode className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Plain Text .txt</span>
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={handleDownloadFullReport}
-                  disabled={exportLoading !== false}
-                  className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-md shadow-amber-500/20 cursor-pointer disabled:opacity-50"
-                  title="Download complete multi-page PDF booklet"
-                >
-                  <FileText className="w-3.5 h-3.5 text-slate-950" />
-                  <span>Full PDF Report</span>
-                </button>
+                    <button
+                      type="button"
+                      onClick={handleDownloadFullReport}
+                      disabled={exportLoading !== false}
+                      className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-md shadow-amber-500/20 cursor-pointer disabled:opacity-50"
+                      title="Download complete multi-page PDF booklet"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-slate-950" />
+                      <span>Full PDF Report</span>
+                    </button>
+                  </>
+                )}
 
                 <button
                   type="button"

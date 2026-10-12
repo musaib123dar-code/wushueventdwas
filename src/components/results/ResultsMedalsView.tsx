@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 
 export const ResultsMedalsView: React.FC = () => {
-  const { event, brackets, categories, players, exportDataAsCSV } = useTournament();
+  const { event, brackets, categories, players, exportDataAsCSV, role } = useTournament();
 
   // Compute category results: Gold, Silver, Bronze
   const categoryResults = useMemo(() => {
@@ -116,13 +116,15 @@ export const ResultsMedalsView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2.5">
-          <button
-            onClick={() => exportDataAsCSV('results')}
-            className="px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-lg border border-slate-800 transition-colors flex items-center gap-1.5"
-          >
-            <Download className="w-3.5 h-3.5 text-slate-400" />
-            <span>Export Medals CSV</span>
-          </button>
+          {role !== 'general_view' && (
+            <button
+              onClick={() => exportDataAsCSV('results')}
+              className="px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-lg border border-slate-800 transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5 text-slate-400" />
+              <span>Export Medals CSV</span>
+            </button>
+          )}
           <button
             onClick={() => window.print()}
             className="px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 rounded-lg border border-slate-800 transition-colors flex items-center gap-1.5"
