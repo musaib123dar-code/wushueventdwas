@@ -56,6 +56,7 @@ import {
   supabaseUpsertSidelineJudgeScore,
   supabaseDeleteSidelineJudgeScore,
   supabaseUpsertPlayer,
+  registerPlayerPublicly,
   supabaseDeletePlayer,
   supabaseBulkUpsertPlayers,
   supabaseClearPlayers,
@@ -126,6 +127,19 @@ interface TournamentContextType {
   
   players: Player[];
   addPlayer: (playerData: Omit<Player, 'id' | 'createdAt'>) => { success: boolean; error?: string; player?: Player };
+  registerPublicPlayer: (playerData: {
+    eventId: string;
+    name: string;
+    fatherName: string;
+    dob: string;
+    gender: 'male' | 'female';
+    weightKg: number;
+    clubSchool: string;
+    district: string;
+    stateRegion?: string;
+    contactNumber?: string;
+    aadharNumber?: string;
+  }) => Promise<{ success: boolean; error?: string; player?: Player }>;
   bulkAddPlayers: (playersData: Omit<Player, 'id' | 'createdAt'>[], replace?: boolean) => { added: number; duplicates: number };
   updatePlayer: (id: string, playerData: Partial<Player>) => { success: boolean; error?: string };
   deletePlayer: (id: string) => { success: boolean; error?: string };
@@ -926,6 +940,35 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     supabaseUpsertPlayer(newPlayer, event.id);
     addAuditLog('CREATE', `Player: ${newPlayer.name}`, `Reg #${newPlayer.registrationNumber}, Club: ${newPlayer.clubSchool}, Weight: ${newPlayer.weightKg}kg for ${event.name}`);
     return { success: true, player: newPlayer };
+  };
+
+  // Public Player Registration (no login required, event-associated, auto-sequential DWAS reg number)
+  const registerPublicPlayer = async (playerData: {
+    eventId: string;
+    name: string;
+    fatherName: string;
+    dob: string;
+    gender: 'male' | 'female';
+    weightKg: number;
+    clubSchool: string;
+    district: string;
+    stateRegion?: string;
+    contactNumber?: string;
+    aadharNumber?: string;
+  }) => {
+    const res = await registerPlayerPublicly(playerData);
+    if (res.success && res.player) {
+      // If registered under active selected event, include in current players list
+      if (res.player.eventId === event.id) {
+        setPlayers(prev => [res.player!, ...prev.filter(p => p.id !== res.player!.id)]);
+      }
+      addAuditLog(
+        'CREATE',
+        `Player: ${res.player.name}`,
+        `Public self-registration Reg #${res.player.registrationNumber} for event ID ${res.player.eventId}`
+      );
+    }
+    return res;
   };
 
   const updatePlayer = (id: string, playerData: Partial<Player>) => {
@@ -2854,6 +2897,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         resetWeightCategories,
         players,
         addPlayer,
+        registerPublicPlayer,
         bulkAddPlayers,
         updatePlayer,
         deletePlayer,

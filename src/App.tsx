@@ -19,6 +19,7 @@ import { InactiveEventLockoutView } from './components/common/InactiveEventLocko
 import { LoginModal } from './components/auth/LoginModal';
 import { SupabaseSettingsModal } from './components/supabase/SupabaseSettingsModal';
 import { AboutUsView } from './components/about/AboutUsView';
+import { PublicPlayerRegistrationView } from './components/public/PublicPlayerRegistrationView';
 import { soundEffects } from './utils/soundEffects';
 import {
   LayoutDashboard,
@@ -47,6 +48,44 @@ const MainAppContent: React.FC = () => {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
 
+  // Synchronize direct URL access (#register, #about, or ?tab=register)
+  React.useEffect(() => {
+    const handleLocationChange = () => {
+      if (typeof window === 'undefined') return;
+      const hash = window.location.hash.toLowerCase();
+      const params = new URLSearchParams(window.location.search);
+      if (hash === '#register' || params.get('tab') === 'register') {
+        setActiveTab('register');
+      } else if (hash === '#about' || params.get('tab') === 'about') {
+        setActiveTab('about');
+      }
+    };
+
+    handleLocationChange();
+    window.addEventListener('hashchange', handleLocationChange);
+    window.addEventListener('popstate', handleLocationChange);
+    return () => {
+      window.removeEventListener('hashchange', handleLocationChange);
+      window.removeEventListener('popstate', handleLocationChange);
+    };
+  }, [setActiveTab]);
+
+  // Keep window hash in sync when switching to public tabs
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (activeTab === 'register') {
+      if (window.location.hash !== '#register') {
+        window.history.replaceState(null, '', '#register');
+      }
+    } else if (activeTab === 'about') {
+      if (window.location.hash !== '#about') {
+        window.history.replaceState(null, '', '#about');
+      }
+    } else if (window.location.hash === '#register' || window.location.hash === '#about') {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }, [activeTab]);
+
   const toggleSound = () => {
     const next = !soundEnabled;
     setSoundEnabled(next);
@@ -55,6 +94,11 @@ const MainAppContent: React.FC = () => {
   };
 
   const renderContent = () => {
+    // Public Player Registration is always publicly accessible without login or live event restriction
+    if (activeTab === 'register') {
+      return <PublicPlayerRegistrationView />;
+    }
+
     // About Us page is always publicly accessible without login or live event restriction
     if (activeTab === 'about') {
       return <AboutUsView />;
@@ -112,6 +156,8 @@ const MainAppContent: React.FC = () => {
         return <ExportReportsView />;
       case 'about':
         return <AboutUsView />;
+      case 'register':
+        return <PublicPlayerRegistrationView />;
       default:
         return <PublicTournamentView />;
     }

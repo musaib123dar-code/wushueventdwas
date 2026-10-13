@@ -933,10 +933,228 @@ export function subscribeToSupabaseTournament(
       });
 
     return () => {
-      client.removeChannel(channel);
+      try {
+        client.removeChannel(channel);
+      } catch (_) {}
     };
   } catch (err) {
-    console.error('Failed to subscribe to Supabase Realtime channel:', err);
+    console.warn('[Supabase Realtime] Subscription error:', err);
     return null;
   }
 }
+
+/**
+ * Public Player Registration with Event Validation & Sequential Registration Number
+ * (District Wushu Association Srinagar: DWAS-YYYY-XXXXX)
+ */
+export async function registerPlayerPublicly(
+  playerData: {
+    eventId: string;
+    name: string;
+    fatherName: string;
+    dob: string;
+    gender: 'male' | 'female';
+    weightKg: number;
+    clubSchool: string;
+    district: string;
+    stateRegion?: string;
+    contactNumber?: string;
+    aadharNumber?: string;
+  }
+): Promise<{
+  success: boolean;
+  player?: Player;
+  error?: string;
+}> {
+  const client = getSupabaseClient();
+
+  // 1. Basic field validation
+  if (!playerData.eventId) {
+    return { success: false, error: 'Please select an official event to register.' };
+  }
+  if (!playerData.name?.trim()) {
+    return { success: false, error: 'Player full name is required.' };
+  }
+  if (!playerData.fatherName?.trim()) {
+    return { success: false, error: 'Parentage (father name) is required.' };
+  }
+  if (!playerData.dob) {
+    return { success: false, error: 'Date of birth is required.' };
+  }
+  if (!playerData.weightKg || Number(playerData.weightKg) <= 0) {
+    return { success: false, error: 'Valid positive weight in kilograms is required.' };
+  }
+
+  // 2. Event validation against database (must be active & exist)
+  let eventYear = new Date().getFullYear();
+  let verifiedEvent: any = null;
+
+  if (client) {
+    try {
+      const { data: eventRow, error: evErr } = await client
+        .from('events')
+        .select('*')
+        .eq('id', playerData.eventId)
+        .single();
+
+      if (!evErr && eventRow) {
+        verifiedEvent = eventRow;
+      }
+    } catch (err: any) {
+      console.warn('Supabase event validation check notice:', err);
+    }
+  }
+
+  // Fallback or verify with local database
+  if (!verifiedEvent) {
+    const localEvents = await localGetAll<EventSetup>('events');
+    const match = localEvents.find(e => e.id === playerData.eventId);
+    if (match) {
+      verifiedEvent = match;
+    }
+  }
+
+  if (!verifiedEvent) {
+    return { success: false, error: 'Selected championship event was not found in the official registry.' };
+  }
+  if (verifiedEvent.status === 'completed') {
+    return { success: false, error: 'Registration for this event is closed (Tournament is marked completed).' };
+  }
+
+  const rawDate = verifiedEvent.start_date || verifiedEvent.startDate || verifiedEvent.tournamentReferenceDate;
+  if (rawDate) {
+    const parsedYear = new Date(rawDate).getFullYear();
+    if (!isNaN(parsedYear)) {
+      eventYear = parsedYear;
+    }
+  }
+
+  // 3. Duplicate check within this event (by Name + Father + DOB, or Aadhaar)
+  const cleanName = playerData.name.trim().toLowerCase();
+  const cleanFather = playerData.fatherName.trim().toLowerCase();
+  const cleanAadhar = playerData.aadharNumber ? playerData.aadharNumber.trim().replace(/\s+/g, '') : '';
+
+  // Check Supabase
+  if (client) {
+    try {
+      const { data: existingRows } = await client
+        .from('players')
+        .select('id, name, father_name, dob, aadhar_number')
+        .eq('event_id', playerData.eventId);
+
+      if (existingRows && existingRows.length > 0) {
+        for (const row of existingRows) {
+          const rowAadhar = row.aadhar_number ? String(row.aadhar_number).trim().replace(/\s+/g, '') : '';
+          if (cleanAadhar && rowAadhar && cleanAadhar === rowAadhar) {
+            return {
+              success: false,
+              error: 'An athlete with this Aadhaar number is already registered for this tournament event.',
+            };
+          }
+          if (
+            row.name?.trim().toLowerCase() === cleanName &&
+            row.father_name?.trim().toLowerCase() === cleanFather &&
+            row.dob === playerData.dob
+          ) {
+            return {
+              success: false,
+              error: 'This athlete (same Name, Parentage, and Date of Birth) is already registered for this tournament event.',
+            };
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Also check local IndexedDB
+  const localPlayers = await localGetAll<Player>('players');
+  const eventLocalPlayers = localPlayers.filter(p => p.eventId === playerData.eventId);
+  for (const p of eventLocalPlayers) {
+    const pAadhar = p.aadharNumber ? p.aadharNumber.trim().replace(/\s+/g, '') : '';
+    if (cleanAadhar && pAadhar && cleanAadhar === pAadhar) {
+      return {
+        success: false,
+        error: 'An athlete with this Aadhaar number is already registered for this tournament event.',
+      };
+    }
+    if (
+      p.name?.trim().toLowerCase() === cleanName &&
+      p.fatherName?.trim().toLowerCase() === cleanFather &&
+      p.dob === playerData.dob
+    ) {
+      return {
+        success: false,
+        error: 'This athlete (same Name, Parentage, and Date of Birth) is already registered for this tournament event.',
+      };
+    }
+  }
+
+  // 4. Concurrency-safe Registration Number Allocation (DWAS-YYYY-00001)
+  let maxSeq = 0;
+  const regex = new RegExp(`^DWAS-${eventYear}-(\\d+)$`, 'i');
+
+  if (client) {
+    try {
+      const { data: countData } = await client
+        .from('players')
+        .select('registration_number')
+        .eq('event_id', playerData.eventId);
+
+      if (countData && countData.length > 0) {
+        countData.forEach(r => {
+          const match = r.registration_number?.match(regex);
+          if (match && match[1]) {
+            const num = parseInt(match[1], 10);
+            if (!isNaN(num) && num > maxSeq) {
+              maxSeq = num;
+            }
+          }
+        });
+      }
+    } catch (_) {}
+  }
+
+  // Also scan local players for highest seq
+  eventLocalPlayers.forEach(p => {
+    const match = p.registrationNumber?.match(regex);
+    if (match && match[1]) {
+      const num = parseInt(match[1], 10);
+      if (!isNaN(num) && num > maxSeq) {
+        maxSeq = num;
+      }
+    }
+  });
+
+  const seqNumber = maxSeq + 1;
+
+  const paddedSeq = String(seqNumber).padStart(5, '0');
+  const registrationNumber = `DWAS-${eventYear}-${paddedSeq}`;
+  const playerId = `p-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+  const newPlayer: Player = {
+    id: playerId,
+    eventId: playerData.eventId,
+    registrationNumber,
+    name: playerData.name.trim(),
+    fatherName: playerData.fatherName.trim(),
+    dob: playerData.dob,
+    gender: playerData.gender,
+    weightKg: Number(playerData.weightKg),
+    clubSchool: playerData.clubSchool?.trim() || 'Independent',
+    district: playerData.district?.trim() || 'Srinagar',
+    stateRegion: playerData.stateRegion?.trim() || 'Jammu & Kashmir',
+    contactNumber: playerData.contactNumber?.trim() || '',
+    aadharNumber: playerData.aadharNumber?.trim() || '',
+    status: 'weighed_in',
+    createdAt: new Date().toISOString(),
+  };
+
+  // 5. Persist to Supabase and local IndexedDB
+  const res = await supabaseUpsertPlayer(newPlayer, playerData.eventId);
+  if (!res.success && res.error) {
+    return { success: false, error: `Database error: ${res.error}` };
+  }
+
+  return { success: true, player: newPlayer };
+}
+

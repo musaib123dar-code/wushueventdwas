@@ -16,10 +16,11 @@ import {
   Flame,
   ChevronRight,
   Lock,
+  UserPlus,
 } from 'lucide-react';
 
 export const PublicTournamentView: React.FC = () => {
-  const { event, events, switchEvent, brackets, categories, players, ageCategories, isLoggedIn, setLoginModalOpen } = useTournament();
+  const { event, events, switchEvent, brackets, categories, players, ageCategories, isLoggedIn, setLoginModalOpen, setActiveTab } = useTournament();
 
   const [activeSection, setActiveSection] = useState<'live_queue' | 'brackets' | 'medals' | 'players'>('live_queue');
   const [playerSearch, setPlayerSearch] = useState('');
@@ -123,6 +124,14 @@ export const PublicTournamentView: React.FC = () => {
             <div className="px-3.5 py-1.5 rounded-full bg-slate-950/80 border border-slate-800 text-xs text-slate-300 font-medium">
               Public Spectator View
             </div>
+            <button
+              onClick={() => setActiveTab('register')}
+              className="px-3.5 py-1.5 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm transition-colors"
+              title="Register for Event & Get Official ID Card"
+            >
+              <UserPlus className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Player Registration</span>
+            </button>
             {!isLoggedIn && (
               <button
                 onClick={() => setLoginModalOpen(true)}

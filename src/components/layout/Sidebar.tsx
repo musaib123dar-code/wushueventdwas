@@ -18,6 +18,7 @@ import {
   Zap,
   Database,
   Info,
+  UserPlus,
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
@@ -41,6 +42,7 @@ export const Sidebar: React.FC = () => {
 
   const navItems = [
     { id: 'public', label: 'Public Arena View', icon: <Tv className="w-4 h-4" />, badge: 'Live Display', allowedRoles: ['super_admin', 'admin', 'official', 'general_view'] },
+    { id: 'register', label: 'Player Registration', icon: <UserPlus className="w-4 h-4 text-emerald-400" />, badge: 'Public Open', badgeColor: 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40', allowedRoles: ['super_admin', 'admin', 'official', 'general_view'] },
     { id: 'brackets', label: 'Knockout Brackets', icon: <GitFork className="w-4 h-4" />, badge: `${brackets.length} Trees`, allowedRoles: ['super_admin', 'admin', 'official', 'general_view'] },
     { id: 'results', label: 'Medal Tally & Podium', icon: <Trophy className="w-4 h-4" />, allowedRoles: ['super_admin', 'admin', 'official', 'general_view'] },
     { id: 'dashboard', label: 'Dashboard Overview', icon: <LayoutDashboard className="w-4 h-4" />, allowedRoles: ['super_admin', 'admin', 'official', 'general_view'] },

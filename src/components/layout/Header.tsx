@@ -20,6 +20,7 @@ import {
   RotateCcw,
   Zap,
   Menu,
+  UserPlus,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -173,6 +174,15 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu }) => {
             className={`hover:text-slate-100 transition-colors cursor-pointer ${activeTab === 'players' ? 'text-amber-400 font-semibold' : ''}`}
           >
             Athletes
+          </button>
+          <button
+            onClick={() => setActiveTab('register')}
+            className={`hover:text-slate-100 transition-colors cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'register' ? 'text-emerald-400 font-semibold' : 'text-emerald-400/90 hover:text-emerald-300'
+            }`}
+          >
+            <UserPlus className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Registration</span>
           </button>
 
           {/* Scoring button: only accessible to authenticated officials/admins or opens login */}

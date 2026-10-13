@@ -21,7 +21,9 @@ import {
   RotateCcw,
   Upload,
   ShieldCheck,
+  CreditCard,
 } from 'lucide-react';
+import { downloadPlayerIdCardPdf } from '../../utils/idCardPdfExport';
 
 export const PlayerRegistry: React.FC = () => {
   const {
@@ -530,6 +532,13 @@ export const PlayerRegistry: React.FC = () => {
                       </td>
                       <td className="py-3 px-4 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => downloadPlayerIdCardPdf(p, event, age)}
+                            className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded transition-colors"
+                            title="Download Event ID Card (PDF)"
+                          >
+                            <CreditCard className="w-3.5 h-3.5 text-amber-400" />
+                          </button>
                           {canEdit && (
                             <button
                               onClick={() => openEditModal(p)}
