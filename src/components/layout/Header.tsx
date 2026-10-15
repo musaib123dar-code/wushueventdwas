@@ -122,25 +122,27 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu }) => {
             </select>
           </div>
 
-          {/* Supabase Cloud Live Status Pill */}
-          <button
-            onClick={() => setSupabaseModalOpen(true)}
-            title={`Supabase Realtime Cloud Sync: ${supabaseStatus === 'connected' ? 'Connected & Synchronized' : supabaseStatus}`}
-            className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono-tabular font-semibold border transition-all cursor-pointer bg-slate-900/90 border-slate-800 hover:border-amber-500/40"
-          >
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                supabaseStatus === 'connected'
-                  ? 'bg-emerald-400 animate-pulse'
-                  : supabaseStatus === 'connecting'
-                  ? 'bg-amber-400 animate-ping'
-                  : 'bg-rose-400'
-              }`}
-            />
-            <span className="text-slate-300">
-              {isLoadingData ? 'Syncing...' : supabaseStatus === 'connected' ? 'Cloud Live' : 'Offline'}
-            </span>
-          </button>
+          {/* Supabase Cloud Live Status Pill - Strictly visible only to Super Admin */}
+          {role === 'super_admin' && (
+            <button
+              onClick={() => setSupabaseModalOpen(true)}
+              title={`Supabase Realtime Cloud Sync: ${supabaseStatus === 'connected' ? 'Connected & Synchronized' : supabaseStatus}`}
+              className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono-tabular font-semibold border transition-all cursor-pointer bg-slate-900/90 border-slate-800 hover:border-amber-500/40"
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  supabaseStatus === 'connected'
+                    ? 'bg-emerald-400 animate-pulse'
+                    : supabaseStatus === 'connecting'
+                    ? 'bg-amber-400 animate-ping'
+                    : 'bg-rose-400'
+                }`}
+              />
+              <span className="text-slate-300">
+                {isLoadingData ? 'Syncing...' : supabaseStatus === 'connected' ? 'Cloud Live' : 'Offline'}
+              </span>
+            </button>
+          )}
         </div>
 
         {/* Zone 2: Clean text navigation links */}
